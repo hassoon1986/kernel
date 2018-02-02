@@ -256,6 +256,11 @@ static void pnfs_init_server(struct nfs_server *server)
 	rpc_init_wait_queue(&server->roc_rpcwaitq, "pNFS ROC");
 }
 
+static void nfs4_destroy_server(struct nfs_server *server)
+{
+	nfs4_purge_state_owners(server);
+}
+
 #else
 static void nfs4_shutdown_client(struct nfs_client *clp)
 {
@@ -1071,6 +1076,7 @@ static struct nfs_server *nfs_alloc_server(void)
 	INIT_LIST_HEAD(&server->client_link);
 	INIT_LIST_HEAD(&server->master_link);
 	INIT_LIST_HEAD(&server->delegations);
+	INIT_LIST_HEAD(&server->state_owners_lru);
 
 	atomic_set(&server->active, 0);
 
@@ -1544,6 +1550,7 @@ static int nfs4_server_common_setup(struct nfs_server *server,
 
 	nfs_server_insert_lists(server);
 	server->mount_time = jiffies;
+	server->destroy = nfs4_destroy_server;
 out:
 	nfs_free_fattr(fattr);
 	return error;
@@ -1725,6 +1732,7 @@ struct nfs_server *nfs_clone_server(struct nfs_server *source,
 
 	/* Copy data from the source */
 	server->nfs_client = source->nfs_client;
+	server->destroy = source->destroy;
 	atomic_inc(&server->nfs_client->cl_count);
 	nfs_server_copy_userdata(server, source);
 
