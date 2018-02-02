@@ -117,8 +117,6 @@ struct nfs_unique_id {
 struct nfs4_state_owner {
 	struct nfs_unique_id so_owner_id;
 	struct nfs_server    *so_server;
-	struct list_head     so_lru;
-	unsigned long        so_expires;
 	struct rb_node	     so_server_node;
 
 	struct rpc_cred	     *so_cred;	 /* Associated cred */
@@ -131,6 +129,10 @@ struct nfs4_state_owner {
 	struct rpc_sequence  so_sequence;
 	seqcount_t	     so_reclaim_seqcount;
 	struct mutex	     so_delegreturn_mutex;
+#ifndef __GENKSYMS__
+	struct list_head     so_lru;
+	unsigned long        so_expires;
+#endif
 };
 
 enum {
