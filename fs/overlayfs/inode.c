@@ -286,6 +286,8 @@ int ovl_setxattr(struct dentry *dentry, const char *name,
 	upperdentry = ovl_dentry_upper(dentry);
 	err = vfs_setxattr(upperdentry, name, value, size, flags);
 
+	ovl_copyattr(upperdentry->d_inode, dentry->d_inode);
+
 out_drop_write:
 	ovl_drop_write(dentry);
 out:
