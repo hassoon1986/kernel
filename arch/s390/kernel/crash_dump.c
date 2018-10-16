@@ -245,6 +245,15 @@ static void *kzalloc_panic(int len)
 	return rc;
 }
 
+static const char *nt_name(Elf64_Word type)
+{
+	const char *name = "LINUX";
+
+	if (type == NT_PRPSINFO || type == NT_PRSTATUS || type == NT_PRFPREG)
+		name = KEXEC_CORE_NOTE_NAME;
+	return name;
+}
+
 /*
  * Initialize ELF note
  */
@@ -267,6 +276,25 @@ static void *nt_init(void *buf, Elf64_Word type, void *desc, int d_len,
 	len = roundup(len + note->n_descsz, 4);
 
 	return PTR_ADD(buf, len);
+}
+
+/*
+ * Calculate the size of ELF note
+ */
+static size_t nt_size_name(int d_len, const char *name)
+{
+	size_t size;
+
+	size = sizeof(Elf64_Nhdr);
+	size += roundup(strlen(name) + 1, 4);
+	size += roundup(d_len, 4);
+
+	return size;
+}
+
+static inline size_t nt_size(Elf64_Word type, int d_len)
+{
+	return nt_size_name(d_len, nt_name(type));
 }
 
 /*
@@ -405,6 +433,29 @@ static void *fill_cpu_elf_notes(void *ptr, struct save_area *sa,
 }
 
 /*
+ * Calculate size of ELF notes per cpu
+ */
+static size_t get_cpu_elf_notes_size(void)
+{
+	struct save_area *sa = NULL;
+	size_t size;
+
+	size =	nt_size(NT_PRSTATUS, sizeof(struct elf_prstatus));
+	size +=  nt_size(NT_PRFPREG, sizeof(elf_fpregset_t));
+	size +=  nt_size(NT_S390_TIMER, sizeof(sa->timer));
+	size +=  nt_size(NT_S390_TODCMP, sizeof(sa->clk_cmp));
+	size +=  nt_size(NT_S390_TODPREG, sizeof(sa->tod_reg));
+	size +=  nt_size(NT_S390_CTRS, sizeof(sa->ctrl_regs));
+	size +=  nt_size(NT_S390_PREFIX, sizeof(sa->pref_reg));
+	if (MACHINE_HAS_VX) {
+		size += nt_size(NT_S390_VXRS_HIGH, 16 * sizeof(__vector128));
+		size += nt_size(NT_S390_VXRS_LOW, 16 * 8);
+	}
+
+	return size;
+}
+
+/*
  * Initialize prpsinfo note (new kernel)
  */
 static void *nt_prpsinfo(void *ptr)
@@ -457,6 +508,24 @@ static void *nt_vmcoreinfo(void *ptr)
 	if (!vmcoreinfo)
 		return ptr;
 	return nt_init(ptr, 0, vmcoreinfo, size, "VMCOREINFO");
+}
+
+static size_t nt_vmcoreinfo_size(void)
+{
+	const char *name = "VMCOREINFO";
+	unsigned long size;
+	void *vmcoreinfo;
+
+	vmcoreinfo = os_info_old_entry(OS_INFO_VMCOREINFO, &size);
+	if (vmcoreinfo)
+		return nt_size_name(size, name);
+
+	vmcoreinfo = get_vmcoreinfo_old(&size);
+	if (!vmcoreinfo)
+		return 0;
+
+	kfree(vmcoreinfo);
+	return nt_size_name(size, name);
 }
 
 /*
@@ -572,6 +641,27 @@ static void *notes_init(Elf64_Phdr *phdr, void *ptr, u64 notes_offset)
 	return ptr;
 }
 
+static size_t get_elfcorehdr_size(int mem_chunk_cnt)
+{
+	size_t size;
+
+	size = sizeof(Elf64_Ehdr);
+	/* PT_NOTES */
+	size += sizeof(Elf64_Phdr);
+	/* nt_prpsinfo */
+	size += nt_size(NT_PRPSINFO, sizeof(struct elf_prpsinfo));
+	/* regsets */
+	size += get_cpu_cnt() * get_cpu_elf_notes_size();
+	/* nt_vmcoreinfo */
+	size += nt_vmcoreinfo_size();
+	/* nt_final */
+	size += sizeof(Elf64_Nhdr);
+	/* PT_LOADS */
+	size += mem_chunk_cnt * sizeof(Elf64_Phdr);
+
+	return size;
+}
+
 /*
  * Create ELF core header (new kernel)
  */
@@ -599,8 +689,8 @@ int elfcorehdr_alloc(unsigned long long *addr, unsigned long long *size)
 
 	mem_chunk_cnt = get_mem_chunk_cnt();
 
-	alloc_size = 0x1000 + get_cpu_cnt() * 0x4a0 +
-		mem_chunk_cnt * sizeof(Elf64_Phdr);
+	alloc_size = get_elfcorehdr_size(mem_chunk_cnt);
+
 	hdr = kzalloc_panic(alloc_size);
 	/* Init elf header */
 	ptr = ehdr_init(hdr, mem_chunk_cnt);
