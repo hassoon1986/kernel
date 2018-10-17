@@ -83,6 +83,7 @@
 
 #define X86_FEATURE_IBRS	( 2*32+ 7) /* Indirect Branch Restricted Speculation */
 #define X86_FEATURE_FLUSH_L1D	( 2*32+ 8) /* Flush L1D cache */
+#define X86_FEATURE_L1TF_PTEINV	( 2*32+ 9) /* "" L1TF workaround PTE inversion */
 
 /* Other features, Linux-defined mapping, word 3 */
 /* This range is used for feature bits which conflict or are synthesized */
@@ -237,8 +238,6 @@
 
 /* Because the ALTERNATIVE scheme is for members of the X86_FEATURE club... */
 #define X86_FEATURE_KAISER	( 7*32+31) /* CONFIG_PAGE_TABLE_ISOLATION w/o nokaiser */
-
-#define X86_FEATURE_L1TF_PTEINV	( 7*32+29) /* "" L1TF workaround PTE inversion */
 
 /* Virtualization flags: Linux defined, word 8 */
 #define X86_FEATURE_TPR_SHADOW  ( 8*32+ 0) /* Intel TPR Shadow */
