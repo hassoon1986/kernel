@@ -172,8 +172,26 @@ GLOBAL(entry_SYSCALL_64_after_swapgs)
 	pushq	%r8				/* pt_regs->r8 */
 	pushq	%r9				/* pt_regs->r9 */
 	pushq	%r10				/* pt_regs->r10 */
+	/*
+	 * Clear extra registers that a speculation attack might
+	 * otherwise want to exploit. Interleave XOR with PUSH
+	 * for better uop scheduling:
+	 */
+	xorq	%r10, %r10			/* nospec   r10 */
 	pushq	%r11				/* pt_regs->r11 */
-	sub	$(6*8), %rsp			/* pt_regs->bp, bx, r12-15 not saved */
+	xorq	%r11, %r11			/* nospec   r11 */
+	pushq	%rbx				/* pt_regs->rbx */
+	xorl	%ebx, %ebx			/* nospec   rbx */
+	pushq	%rbp				/* pt_regs->rbp */
+	xorl	%ebp, %ebp			/* nospec   rbp */
+	pushq	%r12				/* pt_regs->r12 */
+	xorq	%r12, %r12			/* nospec   r12 */
+	pushq	%r13				/* pt_regs->r13 */
+	xorq	%r13, %r13			/* nospec   r13 */
+	pushq	%r14				/* pt_regs->r14 */
+	xorq	%r14, %r14			/* nospec   r14 */
+	pushq	%r15				/* pt_regs->r15 */
+	xorq	%r15, %r15			/* nospec   r15 */
 
 	ENABLE_IBRS
 
@@ -189,7 +207,7 @@ entry_SYSCALL_64_fastpath:
 	jae	1f				/* return -ENOSYS (already in pt_regs->ax) */
 	sbb	%rcx, %rcx			/* array_index_mask_nospec() */
 	and	%rcx, %rax
-	movq	%r10, %rcx
+	movq	R10(%rsp), %rcx
 #ifdef CONFIG_RETPOLINE
 	movq	sys_call_table(, %rax, 8), %rax
 	call	__x86_indirect_thunk_rax
@@ -201,7 +219,6 @@ entry_SYSCALL_64_fastpath:
 1:
 /*
  * Syscall return path ending with SYSRET (fast path).
- * Has incompletely filled pt_regs.
  */
 	LOCKDEP_SYS_EXIT
 	/*
@@ -227,6 +244,7 @@ entry_SYSCALL_64_fastpath:
 	DISABLE_IBRS
 
 	RESTORE_C_REGS_EXCEPT_RCX_R11
+	RESTORE_EXTRA_REGS
 	movq	RSP(%rsp), %rsp
 	/*
 	 * This opens a window where we have a user CR3, but are
@@ -266,11 +284,13 @@ tracesys:
 	test	%rax, %rax
 	jnz	tracesys_phase2			/* if needed, run the slow path */
 	RESTORE_C_REGS_EXCEPT_RAX		/* else restore clobbered regs */
+	/* Re-sanitize %r10 and %r11, since the previous call may have clobbered them */
+	xorq	%r10, %r10			/* nospec   r10 */
+	xorq	%r11, %r11			/* nospec   r11 */
 	movq	ORIG_RAX(%rsp), %rax
 	jmp	entry_SYSCALL_64_fastpath	/* and return to the fast path */
 
 tracesys_phase2:
-	SAVE_EXTRA_REGS
 	movq	%rsp, %rdi
 	movl	$AUDIT_ARCH_X86_64, %esi
 	movq	%rax, %rdx
@@ -282,7 +302,9 @@ tracesys_phase2:
 	 * the value it wants us to use in the table lookup.
 	 */
 	RESTORE_C_REGS_EXCEPT_RAX
-	RESTORE_EXTRA_REGS
+	/* Re-sanitize %r10 and %r11, since the previous call may have clobbered them */
+	xorq	%r10, %r10			/* nospec   r10 */
+	xorq	%r11, %r11			/* nospec   r11 */
 #if __SYSCALL_MASK == ~0
 	cmpq	$NR_syscalls, %rax
 #else
@@ -292,7 +314,7 @@ tracesys_phase2:
 	jae	1f				/* return -ENOSYS (already in pt_regs->ax) */
 	sbb	%rcx, %rcx			/* array_index_mask_nospec() */
 	and	%rcx, %rax
-	movq	%r10, %rcx			/* fixup for C */
+	movq	R10(%rsp), %rcx			/* fixup for C */
 #ifdef CONFIG_RETPOLINE
 	movq	sys_call_table(, %rax, 8), %rax
 	call	__x86_indirect_thunk_rax
@@ -308,10 +330,8 @@ tracesys_phase2:
  * Has correct iret frame.
  */
 GLOBAL(int_ret_from_sys_call)
-	SAVE_EXTRA_REGS
 	movq	%rsp, %rdi
 	call	syscall_return_slowpath	/* returns with IRQs disabled */
-	RESTORE_EXTRA_REGS
 	TRACE_IRQS_IRETQ		/* we're about to change IF */
 
 	/*
@@ -381,6 +401,7 @@ syscall_return_via_sysret:
 
 	/* rcx and r11 are already restored (see code above) */
 	RESTORE_C_REGS_EXCEPT_RCX_R11
+	RESTORE_EXTRA_REGS
 	movq	RSP(%rsp), %rsp
 	/*
 	 * This opens a window where we have a user CR3, but are
@@ -395,13 +416,12 @@ syscall_return_via_sysret:
 opportunistic_sysret_failed:
 	DISABLE_IBRS
 
-	jmp tramp_restore_c_regs_and_iret
+	jmp tramp_restore_regs_and_iret
 END(entry_SYSCALL_64)
 
 
 	.macro FORK_LIKE func
 ENTRY(stub_\func)
-	SAVE_EXTRA_REGS 8
 	jmp	sys_\func
 END(stub_\func)
 	.endm
@@ -453,24 +473,18 @@ END(stub_x32_execveat)
  */
 ENTRY(stub_rt_sigreturn)
 	/*
-	 * SAVE_EXTRA_REGS result is not normally needed:
-	 * sigreturn overwrites all pt_regs->GPREGS.
-	 * But sigreturn can fail (!), and there is no easy way to detect that.
-	 * To make sure RESTORE_EXTRA_REGS doesn't restore garbage on error,
-	 * we SAVE_EXTRA_REGS here.
+	 * Note: extra regs are already saved on entry and restored on return,
+	 * so we don't need an extra {SAVE,RESTORE}_EXTRA_REGS here.
 	 */
-	SAVE_EXTRA_REGS 8
 	call	sys_rt_sigreturn
 return_from_stub:
 	addq	$8, %rsp
-	RESTORE_EXTRA_REGS
 	movq	%rax, RAX(%rsp)
 	jmp	int_ret_from_sys_call
 END(stub_rt_sigreturn)
 
 #ifdef CONFIG_X86_X32_ABI
 ENTRY(stub_x32_rt_sigreturn)
-	SAVE_EXTRA_REGS 8
 	call	sys32_x32_rt_sigreturn
 	jmp	return_from_stub
 END(stub_x32_rt_sigreturn)
@@ -563,6 +577,7 @@ END(irq_entries_start)
 	ALLOC_PT_GPREGS_ON_STACK
 	SAVE_C_REGS
 	SAVE_EXTRA_REGS
+	CLEAR_REGS_NOSPEC
 
 	testb	$3, CS(%rsp)
 	jz	1f
@@ -675,7 +690,6 @@ retint_kernel:
  */
 GLOBAL(restore_regs_and_iret)
 	RESTORE_EXTRA_REGS
-restore_c_regs_and_iret:
 	RESTORE_C_REGS
 	REMOVE_PT_GPREGS_FROM_STACK 8
 	INTERRUPT_RETURN
@@ -1069,6 +1083,7 @@ ENTRY(xen_failsafe_callback)
 	ALLOC_PT_GPREGS_ON_STACK
 	SAVE_C_REGS
 	SAVE_EXTRA_REGS
+	CLEAR_REGS_NOSPEC
 	jmp	error_exit
 END(xen_failsafe_callback)
 
@@ -1116,6 +1131,7 @@ ENTRY(paranoid_entry)
 	cld
 	SAVE_C_REGS 8
 	SAVE_EXTRA_REGS 8
+	CLEAR_REGS_NOSPEC
 	movl	$1, %ebx
 	movl	$MSR_GS_BASE, %ecx
 	rdmsr
@@ -1190,6 +1206,7 @@ ENTRY(error_entry)
 	cld
 	SAVE_C_REGS 8
 	SAVE_EXTRA_REGS 8
+	CLEAR_REGS_NOSPEC
 	/*
 	 * error_entry() always returns with a kernel gsbase and
 	 * CR3.  We must also have a kernel CR3/gsbase before
@@ -1197,7 +1214,6 @@ ENTRY(error_entry)
 	 * the kernel CR3 here.
 	 */
 	SWITCH_KERNEL_CR3
-	xorl	%ebx, %ebx
 	testb	$3, CS+8(%rsp)
 	jz	.Lerror_kernelspace
 
@@ -1378,6 +1394,7 @@ ENTRY(nmi)
 	pushq	%r13		/* pt_regs->r13 */
 	pushq	%r14		/* pt_regs->r14 */
 	pushq	%r15		/* pt_regs->r15 */
+	CLEAR_REGS_NOSPEC
 
 	/*
 	 * At this point we no longer need to worry about stack damage
@@ -1400,7 +1417,7 @@ ENTRY(nmi)
 	 * switch to user CR3: we might be going back to kernel code
 	 * that had a user CR3 set.
 	 */
-	jmp	tramp_restore_c_regs_and_iret
+	jmp	tramp_restore_regs_and_iret
 
 .Lnmi_from_kernel:
 	/*
@@ -1604,6 +1621,7 @@ end_repeat_nmi:
 	cld
 	SAVE_C_REGS
 	SAVE_EXTRA_REGS
+	CLEAR_REGS_NOSPEC
 	movl	$1, %ebx
 	movl	$MSR_GS_BASE, %ecx
 	rdmsr
