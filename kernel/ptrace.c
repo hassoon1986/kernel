@@ -228,6 +228,9 @@ static int ptrace_check_attach(struct task_struct *child, bool ignore_state)
 
 static int ptrace_has_cap(struct user_namespace *ns, unsigned int mode)
 {
+	if (mode & PTRACE_MODE_SCHED)
+		return false;
+
 	if (mode & PTRACE_MODE_NOAUDIT)
 		return has_ns_capability_noaudit(current, ns, CAP_SYS_PTRACE);
 	else
@@ -235,10 +238,9 @@ static int ptrace_has_cap(struct user_namespace *ns, unsigned int mode)
 }
 
 /* Returns 0 on success, -errno on denial. */
-int ___ptrace_may_access(struct task_struct *cur, struct task_struct *task,
-		unsigned int mode)
+static int __ptrace_may_access(struct task_struct *task, unsigned int mode)
 {
-	const struct cred *cred = __task_cred(cur), *tcred;
+	const struct cred *cred = current_cred(), *tcred;
 	struct mm_struct *mm;
 	kuid_t caller_uid;
 	kgid_t caller_gid;
@@ -258,7 +260,7 @@ int ___ptrace_may_access(struct task_struct *cur, struct task_struct *task,
 	 */
 
 	/* Don't let security modules deny introspection */
-	if (same_thread_group(task, cur))
+	if (same_thread_group(task, current))
 		return 0;
 	rcu_read_lock();
 	if (mode & PTRACE_MODE_FSCREDS) {
@@ -296,17 +298,25 @@ ok:
 	     !ptrace_has_cap(mm->user_ns, mode)))
 	    return -EPERM;
 
-	if (!(mode & PTRACE_MODE_NOACCESS_CHK))
-		return security_ptrace_access_check(task, mode);
+	if (mode & PTRACE_MODE_SCHED)
+		return 0;
+	return security_ptrace_access_check(task, mode);
+}
 
-	return 0;
+bool ptrace_may_access_sched(struct task_struct *task, unsigned int mode)
+{
+	return __ptrace_may_access(task, mode | PTRACE_MODE_SCHED);
+}
+
+int ___ptrace_may_access(struct task_struct *cur, struct task_struct *task,
+			 unsigned int mode)
+{
+	/*
+	 * !upstream crap leftovers kept for kABI compliance.
+	 */
+	return -EPERM;
 }
 EXPORT_SYMBOL_GPL(___ptrace_may_access);
-
-static int __ptrace_may_access(struct task_struct *task, unsigned int mode)
-{
-	return ___ptrace_may_access(current, task, mode);
-}
 
 bool ptrace_may_access(struct task_struct *task, unsigned int mode)
 {

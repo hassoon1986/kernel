@@ -7,6 +7,7 @@
 #include <asm/msr.h>
 #include <asm/processor.h>
 #include <asm/spec_ctrl.h>
+#include <asm/cpufeature.h>
 
 /*
  * Keep it open for more flags in case needed.

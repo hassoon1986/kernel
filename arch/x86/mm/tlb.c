@@ -100,15 +100,37 @@ void switch_mm(struct mm_struct *prev, struct mm_struct *next,
 	local_irq_restore(flags);
 }
 
+static bool ibpb_needed(struct task_struct *tsk)
+{
+	/*
+	 * Check if the current (previous) task has access to the memory
+	 * of the @tsk (next) task. If access is denied, make sure to
+	 * issue a IBPB to stop user->user Spectre-v2 attacks.
+	 *
+	 * Note: __ptrace_may_access() returns 0 or -ERRNO.
+	 */
+	return (tsk && tsk->mm &&
+		ptrace_may_access_sched(tsk, PTRACE_MODE_SPEC_IBPB));
+}
+
 void switch_mm_irqs_off(struct mm_struct *prev, struct mm_struct *next,
 			struct task_struct *tsk)
 {
 	unsigned cpu = smp_processor_id();
 
 	if (likely(prev != next)) {
-
-		/* Null tsk means switching to kernel, so that's safe */
-		if (tsk && ___ptrace_may_access(tsk, current, PTRACE_MODE_IBPB))
+		/*
+		 * Avoid user/user BTB poisoning by flushing the branch
+		 * predictor when switching between processes. This stops
+		 * one process from doing Spectre-v2 attacks on another.
+		 *
+		 * As an optimization, flush indirect branches only when
+		 * switching into a processes that can't be ptrace by the
+		 * current one (as in such case, attacker has much more
+		 * convenient way how to tamper with the next process than
+		 * branch buffer poisoning).
+		 */
+		if (static_cpu_has(X86_FEATURE_USE_IBPB) && ibpb_needed(tsk))
 			indirect_branch_prediction_barrier();
 
 		this_cpu_write(cpu_tlbstate.state, TLBSTATE_OK);
