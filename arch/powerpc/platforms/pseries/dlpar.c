@@ -345,8 +345,6 @@ int dlpar_release_drc(u32 drc_index)
 }
 
 #ifdef CONFIG_ARCH_CPU_PROBE_RELEASE
-extern int find_and_online_cpu_nid(int cpu);
-
 static int dlpar_online_cpu(struct device_node *dn)
 {
 	int rc = 0;
