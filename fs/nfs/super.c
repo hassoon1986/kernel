@@ -92,6 +92,7 @@ enum {
 	Opt_resvport, Opt_noresvport,
 	Opt_fscache, Opt_nofscache,
 	Opt_migration, Opt_nomigration,
+	Opt_statflush, Opt_nostatflush,
 
 	/* Mount options that take integer arguments */
 	Opt_port,
@@ -156,6 +157,8 @@ static const match_table_t nfs_mount_option_tokens = {
 	{ Opt_nofscache, "nofsc" },
 	{ Opt_migration, "migration" },
 	{ Opt_nomigration, "nomigration" },
+	{ Opt_statflush, "statflush" },
+	{ Opt_nostatflush, "nostatflush" },
 
 	{ Opt_port, "port=%s" },
 	{ Opt_rsize, "rsize=%s" },
@@ -643,6 +646,7 @@ static void nfs_show_mount_options(struct seq_file *m, struct nfs_server *nfss,
 		{ NFS_MOUNT_UNSHARED, ",nosharecache", "" },
 		{ NFS_MOUNT_NOSHARE_XPRT, ",nosharetransport", ""},
 		{ NFS_MOUNT_NORESVPORT, ",noresvport", "" },
+		{ NFS_MOUNT_NOSTATFLUSH, ",nostatflush", "" },
 		{ 0, NULL, NULL }
 	};
 	const struct proc_nfs_info *nfs_infop;
@@ -1332,6 +1336,12 @@ static int nfs_parse_mount_options(char *raw,
 			break;
 		case Opt_nomigration:
 			mnt->options &= ~NFS_OPTION_MIGRATION;
+			break;
+		case Opt_statflush:
+			mnt->flags &= ~NFS_MOUNT_NOSTATFLUSH;
+			break;
+		case Opt_nostatflush:
+			mnt->flags |= NFS_MOUNT_NOSTATFLUSH;
 			break;
 
 		/*
