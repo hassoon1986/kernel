@@ -1521,7 +1521,6 @@ static noinline ssize_t __btrfs_buffered_write(struct file *file,
 	int ret = 0;
 	bool only_release_metadata = false;
 	bool force_page_uptodate = false;
-	bool need_unlock;
 
 	nrptrs = min(DIV_ROUND_UP(iov_iter_count(i), PAGE_CACHE_SIZE),
 			PAGE_CACHE_SIZE / (sizeof(struct page *)));
@@ -1544,6 +1543,7 @@ static noinline ssize_t __btrfs_buffered_write(struct file *file,
 		size_t copied;
 		size_t dirty_sectors;
 		size_t num_sectors;
+		int extents_locked;
 
 		WARN_ON(num_pages > nrptrs);
 
@@ -1586,6 +1586,7 @@ static noinline ssize_t __btrfs_buffered_write(struct file *file,
 			}
 		}
 
+		WARN_ON(reserve_bytes == 0);
 		ret = btrfs_delalloc_reserve_metadata(inode, reserve_bytes);
 		if (ret) {
 			if (!only_release_metadata)
@@ -1598,7 +1599,6 @@ static noinline ssize_t __btrfs_buffered_write(struct file *file,
 		}
 
 		release_bytes = reserve_bytes;
-		need_unlock = false;
 again:
 		/*
 		 * This is going to setup the pages array with the number of
@@ -1608,19 +1608,23 @@ again:
 		ret = prepare_pages(inode, pages, num_pages,
 				    pos, write_bytes,
 				    force_page_uptodate);
-		if (ret)
+		if (ret) {
+			btrfs_delalloc_release_extents(BTRFS_I(inode),
+						       reserve_bytes, true);
 			break;
+		}
 
-		ret = lock_and_cleanup_extent_if_need(inode, pages, num_pages,
-						pos, write_bytes, &lockstart,
-						&lockend, &cached_state);
-		if (ret < 0) {
-			if (ret == -EAGAIN)
-				goto again;
+		extents_locked = lock_and_cleanup_extent_if_need(
+				inode, pages,
+ 				num_pages, pos, write_bytes, &lockstart,
+ 				&lockend, &cached_state);
+		if (extents_locked < 0) {
+			if (extents_locked == -EAGAIN)
+ 				goto again;
+			btrfs_delalloc_release_extents(BTRFS_I(inode),
+						       reserve_bytes, true);
+			ret = extents_locked;
 			break;
-		} else if (ret > 0) {
-			need_unlock = true;
-			ret = 0;
 		}
 
 		copied = btrfs_copy_from_user(pos, num_pages,
@@ -1650,28 +1654,15 @@ again:
 						   PAGE_CACHE_SIZE);
 		}
 
-		/*
-		 * If we had a short copy we need to release the excess delaloc
-		 * bytes we reserved.  We need to increment outstanding_extents
-		 * because btrfs_delalloc_release_space and
-		 * btrfs_delalloc_release_metadata will decrement it, but
-		 * we still have an outstanding extent for the chunk we actually
-		 * managed to copy.
-		 */
 		if (num_sectors > dirty_sectors) {
 
 			/* release everything except the sectors we dirtied */
 			release_bytes -= dirty_sectors <<
 				root->fs_info->sb->s_blocksize_bits;
 
-			if (copied > 0) {
-				spin_lock(&BTRFS_I(inode)->lock);
-				BTRFS_I(inode)->outstanding_extents++;
-				spin_unlock(&BTRFS_I(inode)->lock);
-			}
 			if (only_release_metadata) {
 				btrfs_delalloc_release_metadata(inode,
-								release_bytes);
+							release_bytes, true);
 			} else {
 				u64 __pos;
 
@@ -1679,7 +1670,7 @@ again:
 					(dirty_pages << PAGE_CACHE_SHIFT);
 				btrfs_delalloc_release_space(inode,
 						data_reserved, __pos,
-						release_bytes);
+						release_bytes, true);
 			}
 		}
 
@@ -1690,10 +1681,12 @@ again:
 			ret = btrfs_dirty_pages(root, inode, pages,
 						dirty_pages, pos, copied,
 						NULL);
-		if (need_unlock)
+		if (extents_locked)
 			unlock_extent_cached(&BTRFS_I(inode)->io_tree,
 					     lockstart, lockend, &cached_state,
 					     GFP_NOFS);
+		btrfs_delalloc_release_extents(BTRFS_I(inode), reserve_bytes,
+					       true);
 		if (ret) {
 			btrfs_drop_pages(pages, num_pages);
 			break;
@@ -1730,11 +1723,12 @@ again:
 	if (release_bytes) {
 		if (only_release_metadata) {
 			btrfs_end_write_no_snapshoting(root);
-			btrfs_delalloc_release_metadata(inode, release_bytes);
+			btrfs_delalloc_release_metadata(inode, release_bytes,
+							true);
 		} else {
 			btrfs_delalloc_release_space(inode, data_reserved,
 						round_down(pos, root->sectorsize),
-						release_bytes);
+						release_bytes, true);
 		}
 	}
 

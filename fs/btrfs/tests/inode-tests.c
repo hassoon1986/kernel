@@ -939,7 +939,6 @@ static int test_extent_accounting(void)
 	btrfs_test_inode_set_ops(inode);
 
 	/* [BTRFS_MAX_EXTENT_SIZE] */
-	BTRFS_I(inode)->outstanding_extents++;
 	ret = btrfs_set_extent_delalloc(inode, 0, BTRFS_MAX_EXTENT_SIZE - 1,
 					NULL, 0);
 	if (ret) {
@@ -954,7 +953,6 @@ static int test_extent_accounting(void)
 	}
 
 	/* [BTRFS_MAX_EXTENT_SIZE][4k] */
-	BTRFS_I(inode)->outstanding_extents++;
 	ret = btrfs_set_extent_delalloc(inode, BTRFS_MAX_EXTENT_SIZE,
 					BTRFS_MAX_EXTENT_SIZE + 4095, NULL, 0);
 	if (ret) {
@@ -973,7 +971,7 @@ static int test_extent_accounting(void)
 			       BTRFS_MAX_EXTENT_SIZE >> 1,
 			       (BTRFS_MAX_EXTENT_SIZE >> 1) + 4095,
 			       EXTENT_DELALLOC | EXTENT_DIRTY |
-			       EXTENT_UPTODATE | EXTENT_DO_ACCOUNTING, 0, 0,
+			       EXTENT_UPTODATE, 0, 0,
 			       NULL, GFP_NOFS);
 	if (ret) {
 		test_msg("clear_extent_bit returned %d\n", ret);
@@ -987,7 +985,6 @@ static int test_extent_accounting(void)
 	}
 
 	/* [BTRFS_MAX_EXTENT_SIZE][4K] */
-	BTRFS_I(inode)->outstanding_extents++;
 	ret = btrfs_set_extent_delalloc(inode, BTRFS_MAX_EXTENT_SIZE >> 1,
 					(BTRFS_MAX_EXTENT_SIZE >> 1) + 4095,
 					NULL, 0);
@@ -1004,12 +1001,7 @@ static int test_extent_accounting(void)
 
 	/*
 	 * [BTRFS_MAX_EXTENT_SIZE+4K][4K HOLE][BTRFS_MAX_EXTENT_SIZE+4K]
-	 *
-	 * I'm artificially adding 2 to outstanding_extents because in the
-	 * buffered IO case we'd add things up as we go, but I don't feel like
-	 * doing that here, this isn't the interesting case we want to test.
 	 */
-	BTRFS_I(inode)->outstanding_extents += 2;
 	ret = btrfs_set_extent_delalloc(inode, BTRFS_MAX_EXTENT_SIZE + 8192,
 					(BTRFS_MAX_EXTENT_SIZE << 1) + 12287,
 					NULL, 0);
@@ -1044,7 +1036,7 @@ static int test_extent_accounting(void)
 			       BTRFS_MAX_EXTENT_SIZE+4096,
 			       BTRFS_MAX_EXTENT_SIZE+8191,
 			       EXTENT_DIRTY | EXTENT_DELALLOC |
-			       EXTENT_DO_ACCOUNTING | EXTENT_UPTODATE, 0, 0,
+			       EXTENT_UPTODATE, 0, 0,
 			       NULL, GFP_NOFS);
 	if (ret) {
 		test_msg("clear_extent_bit returned %d\n", ret);
@@ -1061,7 +1053,6 @@ static int test_extent_accounting(void)
 	 * Refill the hole again just for good measure, because I thought it
 	 * might fail and I'd rather satisfy my paranoia at this point.
 	 */
-	BTRFS_I(inode)->outstanding_extents++;
 	ret = btrfs_set_extent_delalloc(inode, BTRFS_MAX_EXTENT_SIZE+4096,
 					BTRFS_MAX_EXTENT_SIZE+8191, NULL, 0);
 	if (ret) {
@@ -1078,7 +1069,7 @@ static int test_extent_accounting(void)
 	/* Empty */
 	ret = clear_extent_bit(&BTRFS_I(inode)->io_tree, 0, (u64)-1,
 			       EXTENT_DIRTY | EXTENT_DELALLOC |
-			       EXTENT_DO_ACCOUNTING | EXTENT_UPTODATE, 0, 0,
+			       EXTENT_UPTODATE, 0, 0,
 			       NULL, GFP_NOFS);
 	if (ret) {
 		test_msg("clear_extent_bit returned %d\n", ret);
@@ -1095,7 +1086,7 @@ out:
 	if (ret)
 		clear_extent_bit(&BTRFS_I(inode)->io_tree, 0, (u64)-1,
 				 EXTENT_DIRTY | EXTENT_DELALLOC |
-				 EXTENT_DO_ACCOUNTING | EXTENT_UPTODATE, 0, 0,
+				 EXTENT_UPTODATE, 0, 0,
 				 NULL, GFP_NOFS);
 	iput(inode);
 	btrfs_free_dummy_root(root);

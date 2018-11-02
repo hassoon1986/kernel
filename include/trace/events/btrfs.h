@@ -25,6 +25,7 @@ struct btrfs_work;
 struct __btrfs_workqueue;
 struct btrfs_qgroup_extent_record;
 struct prelim_ref;
+struct btrfs_qgroup;
 
 #define show_ref_type(type)						\
 	__print_symbolic(type,						\
@@ -53,6 +54,12 @@ struct prelim_ref;
 	obj, ((obj >= BTRFS_DATA_RELOC_TREE_OBJECTID) ||		\
 	      (obj >= BTRFS_ROOT_TREE_OBJECTID &&			\
 	       obj <= BTRFS_QUOTA_TREE_OBJECTID)) ? __show_root_type(obj) : "-"
+
+#define show_qgroup_rsv_type(type)					\
+	__print_symbolic(type,						\
+		{ BTRFS_QGROUP_RSV_DATA,	  "DATA"	},	\
+		{ BTRFS_QGROUP_RSV_META_PERTRANS, "META_PERTRANS" },	\
+		{ BTRFS_QGROUP_RSV_META_PREALLOC, "META_PREALLOC" })
 
 #define BTRFS_GROUP_FLAGS	\
 	{ BTRFS_BLOCK_GROUP_DATA,	"DATA"},	\
@@ -1543,6 +1550,123 @@ DEFINE_EVENT(btrfs__prelim_ref, btrfs_prelim_ref_insert,
 	TP_ARGS(fs_info, oldref, newref, tree_size)
 );
 
+TRACE_EVENT(qgroup_update_reserve,
+
+	TP_PROTO(struct btrfs_fs_info *fs_info, struct btrfs_qgroup *qgroup,
+		 s64 diff, int type),
+
+	TP_ARGS(fs_info, qgroup, diff, type),
+
+	TP_STRUCT__entry_btrfs(
+		__field(	u64,	qgid			)
+		__field(	u64,	cur_reserved		)
+		__field(	s64,	diff			)
+		__field(	int,	type			)
+	),
+
+	TP_fast_assign_btrfs(fs_info,
+		__entry->qgid		= qgroup->qgroupid;
+		__entry->cur_reserved	= qgroup->rsv.values[type];
+		__entry->diff		= diff;
+	),
+
+	TP_printk_btrfs("qgid=%llu type=%s cur_reserved=%llu diff=%lld",
+		__entry->qgid, show_qgroup_rsv_type(__entry->type),
+		__entry->cur_reserved, __entry->diff)
+);
+
+TRACE_EVENT(qgroup_meta_reserve,
+
+	TP_PROTO(struct btrfs_root *root, s64 diff, int type),
+
+	TP_ARGS(root, diff, type),
+
+	TP_STRUCT__entry_btrfs(
+		__field(	u64,	refroot			)
+		__field(	s64,	diff			)
+		__field(	int,	type			)
+	),
+
+	TP_fast_assign_btrfs(root->fs_info,
+		__entry->refroot	= root->objectid;
+		__entry->diff		= diff;
+	),
+
+	TP_printk_btrfs("refroot=%llu(%s) type=%s diff=%lld",
+		show_root_type(__entry->refroot),
+		show_qgroup_rsv_type(__entry->type), __entry->diff)
+);
+
+TRACE_EVENT(qgroup_meta_convert,
+
+	TP_PROTO(struct btrfs_root *root, s64 diff),
+
+	TP_ARGS(root, diff),
+
+	TP_STRUCT__entry_btrfs(
+		__field(	u64,	refroot			)
+		__field(	s64,	diff			)
+		__field(	int,	type			)
+	),
+
+	TP_fast_assign_btrfs(root->fs_info,
+		__entry->refroot	= root->objectid;
+		__entry->diff		= diff;
+	),
+
+	TP_printk_btrfs("refroot=%llu(%s) type=%s->%s diff=%lld",
+		show_root_type(__entry->refroot),
+		show_qgroup_rsv_type(BTRFS_QGROUP_RSV_META_PREALLOC),
+		show_qgroup_rsv_type(BTRFS_QGROUP_RSV_META_PERTRANS),
+		__entry->diff)
+);
+
+TRACE_EVENT(qgroup_meta_free_all_pertrans,
+
+	TP_PROTO(struct btrfs_root *root),
+
+	TP_ARGS(root),
+
+	TP_STRUCT__entry_btrfs(
+		__field(	u64,	refroot			)
+		__field(	s64,	diff			)
+		__field(	int,	type			)
+	),
+
+	TP_fast_assign_btrfs(root->fs_info,
+		__entry->refroot	= root->objectid;
+		spin_lock(&root->qgroup_meta_rsv_lock);
+		__entry->diff		= -(s64)root->qgroup_meta_rsv_pertrans;
+		spin_unlock(&root->qgroup_meta_rsv_lock);
+		__entry->type		= BTRFS_QGROUP_RSV_META_PERTRANS;
+	),
+
+	TP_printk_btrfs("refroot=%llu(%s) type=%s diff=%lld",
+		show_root_type(__entry->refroot),
+		show_qgroup_rsv_type(__entry->type), __entry->diff)
+);
+
+TRACE_EVENT(btrfs_inode_mod_outstanding_extents,
+	TP_PROTO(struct btrfs_root *root, u64 ino, int mod),
+
+	TP_ARGS(root, ino, mod),
+
+	TP_STRUCT__entry_btrfs(
+		__field(	u64, root_objectid	)
+		__field(	u64, ino		)
+		__field(	int, mod		)
+	),
+
+	TP_fast_assign_btrfs(root->fs_info,
+		__entry->root_objectid	= root->objectid;
+		__entry->ino		= ino;
+		__entry->mod		= mod;
+	),
+
+	TP_printk_btrfs("root=%llu(%s) ino=%llu mod=%d",
+			show_root_type(__entry->root_objectid),
+			(unsigned long long)__entry->ino, __entry->mod)
+);
 #endif /* _TRACE_BTRFS_H */
 
 /* This part must be outside protection */

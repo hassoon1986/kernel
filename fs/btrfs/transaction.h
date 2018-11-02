@@ -185,6 +185,20 @@ static inline void btrfs_clear_skip_qgroup(struct btrfs_trans_handle *trans)
 	delayed_refs->qgroup_to_skip = 0;
 }
 
+
+/*
+ * Try to commit transaction asynchronously, so this is safe to call
+ * even holding a spinlock.
+ *
+ * It's done by informing transaction_kthread to commit transaction without
+ * waiting for commit interval.
+ */
+static inline void btrfs_commit_transaction_locksafe(
+		struct btrfs_fs_info *fs_info)
+{
+	set_bit(BTRFS_FS_NEED_ASYNC_COMMIT, &fs_info->flags);
+	wake_up_process(fs_info->transaction_kthread);
+}
 int btrfs_end_transaction(struct btrfs_trans_handle *trans,
 			  struct btrfs_root *root);
 struct btrfs_trans_handle *btrfs_start_transaction(struct btrfs_root *root,

@@ -2673,6 +2673,7 @@ int dev_ethtool(struct net *net, struct ifreq *ifr)
 		break;
 	case ETHTOOL_GPHYSTATS:
 		rc = ethtool_get_phy_stats(dev, useraddr);
+		break;
 	case ETHTOOL_PERQUEUE:
 		rc = ethtool_set_per_queue(dev, useraddr);
 		break;
