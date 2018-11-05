@@ -1175,8 +1175,6 @@ static void srp_terminate_io(struct srp_rport *rport)
 {
 	struct srp_target_port *target = rport->lld_data;
 	struct srp_rdma_ch *ch;
-	struct Scsi_Host *shost = target->scsi_host;
-	struct scsi_device *sdev;
 	int i, j;
 
 	for (i = 0; i < target->ch_count; i++) {

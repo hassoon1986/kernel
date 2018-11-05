@@ -343,7 +343,7 @@ int release_resource(struct resource *old)
 EXPORT_SYMBOL(release_resource);
 
 /*
- * Finds the lowest iomem reosurce exists with-in [res->start.res->end)
+ * Finds the lowest iomem resource existing within [res->start..res->end].
  * the caller must specify res->start, res->end, res->flags and "name".
  * If found, returns 0, res is overwritten, if not found, returns -1.
  * This walks through whole tree and not just first level children
@@ -376,7 +376,7 @@ static int find_next_iomem_res(struct resource *res, char *name,
 			p = NULL;
 			break;
 		}
-		if ((p->end >= start) && (p->start < end))
+		if ((p->end >= start) && (p->start <= end))
 			break;
 	}
 
