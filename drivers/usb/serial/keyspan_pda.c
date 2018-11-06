@@ -858,6 +858,19 @@ static struct usb_serial_driver xircom_pgs_fake_device = {
 };
 #endif
 
+static int keyspan_pda_attach(struct usb_serial *serial)
+{
+	unsigned char num_ports = serial->num_ports;
+
+	if (serial->num_bulk_out < num_ports ||
+			serial->num_interrupt_in < num_ports) {
+		dev_err(&serial->interface->dev, "missing endpoints\n");
+		return -ENODEV;
+	}
+
+	return 0;
+}
+
 static struct usb_serial_driver keyspan_pda_device = {
 	.driver = {
 		.owner =	THIS_MODULE,
@@ -881,6 +894,7 @@ static struct usb_serial_driver keyspan_pda_device = {
 	.break_ctl =		keyspan_pda_break_ctl,
 	.tiocmget =		keyspan_pda_tiocmget,
 	.tiocmset =		keyspan_pda_tiocmset,
+	.attach =		keyspan_pda_attach,
 	.attach =		keyspan_pda_startup,
 	.release =		keyspan_pda_release,
 };
