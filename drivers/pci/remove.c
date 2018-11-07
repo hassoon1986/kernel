@@ -27,9 +27,6 @@ static void pci_stop_dev(struct pci_dev *dev)
 		device_unregister(&dev->dev);
 		dev->is_added = 0;
 	}
-
-	if (dev->bus->self)
-		pcie_aspm_exit_link_state(dev);
 }
 
 static void pci_destroy_dev(struct pci_dev *dev)
@@ -41,6 +38,7 @@ static void pci_destroy_dev(struct pci_dev *dev)
 	dev->bus_list.next = dev->bus_list.prev = NULL;
 	up_write(&pci_bus_sem);
 
+	pcie_aspm_exit_link_state(dev);
 	pci_free_resources(dev);
 	pci_dev_put(dev);
 }
