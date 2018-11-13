@@ -327,8 +327,6 @@ static int pmem_attach_disk(struct device *dev,
 	q->queuedata = pmem;
 
 	disk = alloc_disk_node(0, nid);
-
-	disk->bb = &pmem->bb;
 	if (!disk)
 		return -ENOMEM;
 
@@ -341,6 +339,7 @@ static int pmem_attach_disk(struct device *dev,
 	if (devm_init_badblocks(dev, &pmem->bb))
 		return -ENOMEM;
 	nvdimm_badblocks_populate(nd_region, &pmem->bb, res);
+	disk->bb = &pmem->bb;
 	device_add_disk(dev, disk);
 	revalidate_disk(disk);
 
