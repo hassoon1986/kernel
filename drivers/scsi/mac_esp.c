@@ -432,6 +432,8 @@ static void mac_esp_send_pio_cmd(struct esp *esp, u32 addr, u32 esp_count,
 		}
 	}
 
+	esp->send_cmd_residual = esp_count;
+
 	enable_irq(esp->host->irq);
 }
 
