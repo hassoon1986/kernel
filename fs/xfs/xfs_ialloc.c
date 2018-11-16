@@ -660,6 +660,7 @@ xfs_dialloc(
 	xfs_btree_cur_t	*tcur;		/* temp cursor */
 	xfs_inobt_rec_incore_t trec;	/* temp inode allocation record */
 	struct xfs_perag *pag;
+        int             searchdistance = 10;
 
 
 	if (*IO_agbp == NULL) {
@@ -799,7 +800,6 @@ nextag:
 	if (pagno == agno) {
 		int		doneleft;	/* done, to the left */
 		int		doneright;	/* done, to the right */
-		int		searchdistance = 10;
 
 		error = xfs_inobt_lookup(cur, pagino, XFS_LOOKUP_LE, &i);
 		if (error)
@@ -860,20 +860,8 @@ nextag:
 		/*
 		 * Loop until we find an inode chunk with a free inode.
 		 */
-		while (!doneleft || !doneright) {
+		while (--searchdistance > 0 && (!doneleft || !doneright)) {
 			int	useleft;  /* using left inode chunk this time */
-
-			if (!--searchdistance) {
-				/*
-				 * Not in range - save last search
-				 * location and allocate a new inode
-				 */
-				xfs_btree_del_cursor(tcur, XFS_BTREE_NOERROR);
-				pag->pagl_leftrec = trec.ir_startino;
-				pag->pagl_rightrec = rec.ir_startino;
-				pag->pagl_pagino = pagino;
-				goto newino;
-			}
 
 			/* figure out the closer block if both are valid. */
 			if (!doneleft && !doneright) {
@@ -918,19 +906,31 @@ nextag:
 				goto error1;
 		}
 
-		/*
-		 * We've reached the end of the btree. because
-		 * we are only searching a small chunk of the
-		 * btree each search, there is obviously free
-		 * inodes closer to the parent inode than we
-		 * are now. restart the search again.
-		 */
-		pag->pagl_pagino = NULLAGINO;
-		pag->pagl_leftrec = NULLAGINO;
-		pag->pagl_rightrec = NULLAGINO;
-		xfs_btree_del_cursor(tcur, XFS_BTREE_NOERROR);
-		xfs_btree_del_cursor(cur, XFS_BTREE_NOERROR);
-		goto restart_pagno;
+		if (searchdistance <= 0) {
+			/*
+			 * Not in range - save last search
+			 * location and allocate a new inode
+			 */
+			xfs_btree_del_cursor(tcur, XFS_BTREE_NOERROR);
+			pag->pagl_leftrec = trec.ir_startino;
+			pag->pagl_rightrec = rec.ir_startino;
+			pag->pagl_pagino = pagino;
+
+		} else {
+			/*
+			 * We've reached the end of the btree. because
+			 * we are only searching a small chunk of the
+			 * btree each search, there is obviously free
+			 * inodes closer to the parent inode than we
+			 * are now. restart the search again.
+			 */
+			pag->pagl_pagino = NULLAGINO;
+			pag->pagl_leftrec = NULLAGINO;
+			pag->pagl_rightrec = NULLAGINO;
+			xfs_btree_del_cursor(tcur, XFS_BTREE_NOERROR);
+			xfs_btree_del_cursor(cur, XFS_BTREE_NOERROR);
+			goto restart_pagno;
+		}
 	}
 
 	/*
