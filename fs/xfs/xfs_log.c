@@ -381,6 +381,15 @@ xfs_log_mount(
 		ASSERT(mp->m_flags & XFS_MOUNT_RDONLY);
 	}
 
+        if (mp->m_sb.sb_logsunit > 1 &&
+		   mp->m_sb.sb_logsunit % mp->m_sb.sb_blocksize) {
+		xfs_warn(mp,
+		"log stripe unit %u bytes must be a multiple of block size",
+			 mp->m_sb.sb_logsunit);
+		error = EINVAL;
+                goto out;
+        }
+
 	mp->m_log = xlog_alloc_log(mp, log_target, blk_offset, num_bblks);
 	if (IS_ERR(mp->m_log)) {
 		error = -PTR_ERR(mp->m_log);
