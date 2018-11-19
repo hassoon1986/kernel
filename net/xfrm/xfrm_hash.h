@@ -3,6 +3,7 @@
 
 #include <linux/xfrm.h>
 #include <linux/socket.h>
+#include <linux/jhash.h>
 
 static inline unsigned int __xfrm4_addr_hash(const xfrm_address_t *addr)
 {
@@ -11,7 +12,7 @@ static inline unsigned int __xfrm4_addr_hash(const xfrm_address_t *addr)
 
 static inline unsigned int __xfrm6_addr_hash(const xfrm_address_t *addr)
 {
-	return ntohl(addr->a6[2] ^ addr->a6[3]);
+	return jhash2((__force u32 *)addr->a6, 4, 0);
 }
 
 static inline unsigned int __xfrm4_daddr_saddr_hash(const xfrm_address_t *daddr,
@@ -24,8 +25,7 @@ static inline unsigned int __xfrm4_daddr_saddr_hash(const xfrm_address_t *daddr,
 static inline unsigned int __xfrm6_daddr_saddr_hash(const xfrm_address_t *daddr,
 						    const xfrm_address_t *saddr)
 {
-	return ntohl(daddr->a6[2] ^ daddr->a6[3] ^
-		     saddr->a6[2] ^ saddr->a6[3]);
+	return __xfrm6_addr_hash(daddr) ^ __xfrm6_addr_hash(saddr);
 }
 
 static inline unsigned int __xfrm_dst_hash(const xfrm_address_t *daddr,
