@@ -937,7 +937,6 @@ nextag:
 	 * In a different AG from the parent.
 	 * See if the most recently allocated block has any free.
 	 */
-newino:
 	if (be32_to_cpu(agi->agi_newino) != NULLAGINO) {
 		error = xfs_inobt_lookup(cur, be32_to_cpu(agi->agi_newino),
 					 XFS_LOOKUP_EQ, &i);
