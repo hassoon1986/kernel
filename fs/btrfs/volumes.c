@@ -6167,10 +6167,12 @@ static void submit_stripe_bio(struct btrfs_root *root, struct btrfs_bio *bbio,
 
 		rcu_read_lock();
 		name = rcu_dereference(dev->name);
-		btrfs_debug("btrfs_map_bio: rw %d 0x%x, sector=%llu, dev=%lu "
-			 "(%s id %llu), size=%u\n", bio_op(bio), bio->bi_opf,
-			 (u64)bio->bi_iter.bi_sector, (u_long)dev->bdev->bd_dev,
-			 name->str, dev->devid, bio->bi_iter.bi_size);
+		btrfs_debug(fs_info,
+			"btrfs_map_bio: rw %d 0x%x, sector=%llu, dev=%lu (%s id %llu), size=%u",
+			bio_op(bio), bio->bi_opf,
+			(u64)bio->bi_iter.bi_sector,
+			(u_long)dev->bdev->bd_dev, name->str, dev->devid,
+			bio->bi_iter.bi_size);
 		rcu_read_unlock();
 	}
 #endif

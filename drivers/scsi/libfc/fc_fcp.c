@@ -1014,9 +1014,8 @@ static void fc_fcp_complete_locked(struct fc_fcp_pkt *fsp)
 		    fsp->xfer_len < fsp->data_len && !fsp->io_status &&
 		    (!(fsp->scsi_comp_flags & FCP_RESID_UNDER) ||
 		     fsp->xfer_len < fsp->data_len - fsp->scsi_resid)) {
-			FC_FCP_DBG( fsp, "data underrun, "
-				    "xfer_len %zx data_len %x\n",
-				    fsp->xfer_len, fsp->data_len );
+			FC_FCP_DBG(fsp, "data underrun, xfer %zx data %x\n",
+				    fsp->xfer_len, fsp->data_len);
 			fsp->status_code = FC_DATA_UNDRUN;
 		}
 	}
@@ -1545,8 +1544,8 @@ static void fc_fcp_rec_resp(struct fc_seq *seq, struct fc_frame *fp, void *arg)
 		rjt = fc_frame_payload_get(fp, sizeof(*rjt));
 		switch (rjt->er_reason) {
 		default:
-			FC_FCP_DBG(fsp, "device %x unexpected REC reject "
-				   "reason %d expl %d\n",
+			FC_FCP_DBG(fsp,
+				   "device %x invalid REC reject %d/%d\n",
 				   fsp->rport->port_id, rjt->er_reason,
 				   rjt->er_explan);
 			/* fall through */
@@ -1562,8 +1561,7 @@ static void fc_fcp_rec_resp(struct fc_seq *seq, struct fc_frame *fp, void *arg)
 			break;
 		case ELS_RJT_LOGIC:
 		case ELS_RJT_UNAB:
-			FC_FCP_DBG(fsp, "device %x REC reject "
-				   "reason %x expl %x xfer_len %zx\n",
+			FC_FCP_DBG(fsp, "device %x REC reject %d/%d xfer_len %zx\n",
 				   fsp->rport->port_id, rjt->er_reason,
 				   rjt->er_explan, fsp->xfer_len);
 			/*

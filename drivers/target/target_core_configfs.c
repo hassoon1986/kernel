@@ -2563,7 +2563,7 @@ static ssize_t target_tg_pt_gp_alua_support_##_name##_store(		\
 	if (!t->tg_pt_gp_valid_id) {					\
 		pr_err("Unable to do set " #_name " ALUA state on non"	\
 		       " valid tg_pt_gp ID: %hu\n",			\
-		       t->tg_pt_gp_valid_id);			\
+		       t->tg_pt_gp_valid_id);				\
 		return -EINVAL;						\
 	}								\
 									\

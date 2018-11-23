@@ -64,6 +64,7 @@ void nfs_pgheader_init(struct nfs_pageio_descriptor *desc,
 	hdr->cred = hdr->req->wb_context->cred;
 	hdr->io_start = req_offset(hdr->req);
 	hdr->good_bytes = mirror->pg_count;
+	hdr->io_completion = *pg_io_completion(desc);
 	hdr->dreq = desc->pg_dreq;
 	hdr->layout_private = desc->pg_layout_private;
 	hdr->release = release;
@@ -757,6 +758,7 @@ void nfs_pageio_init(struct nfs_pageio_descriptor *desc,
 		desc->pg_mirrors = desc->pg_mirrors_static;
 		nfs_pageio_mirror_init(&desc->pg_mirrors[0], bsize);
 	}
+	*pg_io_completion(desc) = NULL;
 }
 EXPORT_SYMBOL_GPL(nfs_pageio_init);
 
@@ -882,7 +884,8 @@ static int nfs_pageio_setup_mirroring(struct nfs_pageio_descriptor *pgio,
 	if (!mirror_count || mirror_count > NFS_PAGEIO_DESCRIPTOR_MIRROR_MAX)
 		return -EINVAL;
 
-	if (WARN_ON_ONCE(!pgio->pg_mirrors_dynamic))
+	if (WARN_ON_ONCE(!pgio->pg_mirrors_dynamic ||
+			 pgio->pg_mirrors != pgio->pg_mirrors_dynamic))
 		return -EINVAL;
 
 	pgio->pg_mirror_count = mirror_count;
@@ -901,11 +904,14 @@ void nfs_pageio_stop_mirroring(struct nfs_pageio_descriptor *pgio)
 
 static void nfs_pageio_cleanup_mirroring(struct nfs_pageio_descriptor *pgio)
 {
+	struct nfs_io_completion *iocomp = *pg_io_completion(pgio);
+	*pg_io_completion(pgio) = NULL;
 	pgio->pg_mirror_count = 1;
 	pgio->pg_mirror_idx = 0;
 	pgio->pg_mirrors = pgio->pg_mirrors_static;
 	kfree(pgio->pg_mirrors_dynamic);
 	pgio->pg_mirrors_dynamic = NULL;
+	*pg_io_completion(pgio) = iocomp;
 }
 
 static bool nfs_match_open_context(const struct nfs_open_context *ctx1,
@@ -1226,6 +1232,7 @@ int nfs_pageio_resend(struct nfs_pageio_descriptor *desc,
 {
 	LIST_HEAD(failed);
 
+	*pg_io_completion(desc) = hdr->io_completion;
 	desc->pg_dreq = hdr->dreq;
 	while (!list_empty(&hdr->pages)) {
 		struct nfs_page *req = nfs_list_entry(hdr->pages.next);

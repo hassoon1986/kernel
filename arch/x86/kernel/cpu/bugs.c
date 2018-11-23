@@ -848,8 +848,7 @@ static ssize_t cpu_show_common(struct device *dev, struct device_attribute *attr
 			return sprintf(buf, "Mitigation: PTI\n");
 
 		if (boot_cpu_has(X86_FEATURE_XENPV))
-			return sprintf(buf, "Unknown (XEN PV detected, hypervisor "
-					    "mitigation required)\n");
+			return sprintf(buf, "Unknown (XEN PV detected, hypervisor mitigation required)\n");
 
 		break;
 

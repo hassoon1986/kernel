@@ -5020,15 +5020,15 @@ xlog_do_recovery_pass(
  bread_err1:
 	xlog_put_bp(hbp);
 
-	if (error && first_bad)
-		*first_bad = rhead_blk;
-
 	/*
 	 * Submit buffers that have been added from the last record processed,
 	 * regardless of error status.
 	 */
 	if (!list_empty(&buffer_list))
 		error2 = xfs_buf_delwri_submit(&buffer_list);
+
+	if (error && first_bad)
+		*first_bad = rhead_blk;
 
 	return error ? error : error2;
 }
