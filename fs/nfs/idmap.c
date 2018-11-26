@@ -526,7 +526,7 @@ nfs_idmap_id(struct idmap *idmap, struct idmap_hashtable *h,
 	}
 	if (namelen >= IDMAP_NAMESZ)
 		return -EINVAL;
-	if (strnlen(name, IDMAP_NAMESZ) != namelen)
+	if (strnlen(name, namelen) != namelen)
 		/* Embedded nuls cause problems */
 		return -EINVAL;
 
