@@ -2013,8 +2013,10 @@ int ext4_orphan_add(handle_t *handle, struct inode *inode)
 	 * orphan list. If so skip on-disk list modification.
 	 */
 	if (NEXT_ORPHAN(inode) && NEXT_ORPHAN(inode) <=
-		(le32_to_cpu(EXT4_SB(sb)->s_es->s_inodes_count)))
-			goto mem_insert;
+	    le32_to_cpu(EXT4_SB(sb)->s_es->s_inodes_count)) {
+		brelse(iloc.bh);
+		goto mem_insert;
+	}
 
 	/* Insert this inode at the head of the on-disk orphan list... */
 	NEXT_ORPHAN(inode) = le32_to_cpu(EXT4_SB(sb)->s_es->s_last_orphan);
