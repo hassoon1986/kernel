@@ -4067,11 +4067,6 @@ static inline bool netif_is_ovs_master(const struct net_device *dev)
 	return dev->priv_flags & IFF_OPENVSWITCH;
 }
 
-static inline bool netif_is_rxfh_configured(const struct net_device *dev)
-{
-	return dev->priv_flags & IFF_RXFH_CONFIGURED;
-}
-
 static inline bool netif_is_team_master(struct net_device *dev)
 {
 	return dev->priv_flags & IFF_TEAM;
@@ -4090,6 +4085,11 @@ static inline bool netif_is_lag_master(struct net_device *dev)
 static inline bool netif_is_lag_port(struct net_device *dev)
 {
 	return netif_is_bond_slave(dev) || netif_is_team_port(dev);
+}
+
+static inline bool netif_is_rxfh_configured(const struct net_device *dev)
+{
+	return dev->priv_flags & IFF_RXFH_CONFIGURED;
 }
 
 /* This device needs to keep skb dst for qdisc enqueue or ndo_start_xmit() */

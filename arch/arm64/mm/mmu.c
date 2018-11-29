@@ -51,9 +51,6 @@ u64 idmap_t0sz = TCR_T0SZ(VA_BITS);
 u64 kimage_voffset __section(.hyp.text);
 EXPORT_SYMBOL(kimage_voffset);
 
-/* Hardcode rodata=true to fix compilation errors */
-static bool rodata_enabled = true;
-
 /*
  * Empty_zero_page is a special page that is used for zero-initialized data
  * and COW.
@@ -482,6 +479,9 @@ static void __init map_mem(pgd_t *pgd)
 	}
 #endif
 }
+
+/* Hardcode rodata=true to fix compilation errors */
+static const bool rodata_enabled = true;
 
 void mark_rodata_ro(void)
 {

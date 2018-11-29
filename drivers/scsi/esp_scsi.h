@@ -540,6 +540,10 @@ struct esp {
 
 	void			*dma;
 	int			dmarev;
+
+#ifndef __GENKSYMS__
+	u32			send_cmd_residual;
+#endif
 };
 
 /* A front-end driver for the ESP chip should do the following in

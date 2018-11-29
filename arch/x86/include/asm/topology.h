@@ -68,6 +68,7 @@ static inline int early_cpu_to_node(int cpu)
 }
 
 #endif /* !CONFIG_DEBUG_PER_CPU_MAPS */
+
 /* Mappings between node number and cpus on that node. */
 extern cpumask_var_t node_to_cpumask_map[MAX_NUMNODES];
 
@@ -131,7 +132,6 @@ static inline int topology_max_smt_threads(void)
 {
 	return __max_smt_threads;
 }
-
 bool topology_is_primary_thread(unsigned int cpu);
 bool topology_smt_supported(void);
 #else

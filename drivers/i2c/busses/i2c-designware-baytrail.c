@@ -120,7 +120,7 @@ static int baytrail_i2c_acquire(struct dw_i2c_dev *dev)
 	} while (time_before(jiffies, end));
 
 	dev_err(dev->dev, "punit semaphore timed out, resetting\n");
- out:
+out:
 	reset_semaphore(dev);
 
 	ret = iosf_mbi_read(BT_MBI_UNIT_PMC, BT_MBI_BUNIT_READ, addr, &sem);

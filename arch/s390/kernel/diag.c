@@ -234,6 +234,7 @@ int diag224(void *ptr)
 	return rc;
 }
 EXPORT_SYMBOL(diag224);
+
 /*
  * Diagnose 26C: Access Certain System Information
  */

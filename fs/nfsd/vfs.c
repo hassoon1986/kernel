@@ -987,6 +987,7 @@ nfsd_vfs_write(struct svc_rqst *rqstp, struct svc_fh *fhp, struct file *file,
 	/* Support HSMs -- see comment in nfsd_setattr() */
 	if (rqstp->rq_vers >= 3)
 		file->f_flags |= O_NONBLOCK;
+
 	if (stable && !use_wgather)
 		flags |= RWF_SYNC;
 

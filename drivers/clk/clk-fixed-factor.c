@@ -117,17 +117,6 @@ struct clk *clk_register_fixed_factor(struct device *dev, const char *name,
 }
 EXPORT_SYMBOL_GPL(clk_register_fixed_factor);
 
-void clk_hw_unregister_fixed_factor(struct clk_hw *hw)
-{
-	struct clk_fixed_factor *fix;
-
-	fix = to_clk_fixed_factor(hw);
-
-	clk_hw_unregister(hw);
-	kfree(fix);
-}
-EXPORT_SYMBOL_GPL(clk_hw_unregister_fixed_factor);
-
 void clk_unregister_fixed_factor(struct clk *clk)
 {
 	struct clk_hw *hw;
@@ -140,6 +129,17 @@ void clk_unregister_fixed_factor(struct clk *clk)
 	kfree(to_clk_fixed_factor(hw));
 }
 EXPORT_SYMBOL_GPL(clk_unregister_fixed_factor);
+
+void clk_hw_unregister_fixed_factor(struct clk_hw *hw)
+{
+	struct clk_fixed_factor *fix;
+
+	fix = to_clk_fixed_factor(hw);
+
+	clk_hw_unregister(hw);
+	kfree(fix);
+}
+EXPORT_SYMBOL_GPL(clk_hw_unregister_fixed_factor);
 
 #ifdef CONFIG_OF
 /**

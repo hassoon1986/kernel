@@ -53,9 +53,9 @@
 #ifndef __ASSEMBLY__
 
 #include <asm/ptrace.h>
+#include <asm/sections.h>
 #include <asm/sysreg.h>
 #include <asm/cpufeature.h>
-#include <asm/sections.h>
 
 /*
  * __boot_cpu_mode records what mode CPUs were booted in.

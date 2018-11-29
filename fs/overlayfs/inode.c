@@ -169,6 +169,7 @@ int ovl_permission(struct inode *inode, int mask)
 		    (S_ISREG(mode) || S_ISDIR(mode) || S_ISLNK(mode)))
 			goto out_dput;
 	}
+
 	/*
 	 * Check overlay inode with the creds of task and underlying inode
 	 * with creds of mounter

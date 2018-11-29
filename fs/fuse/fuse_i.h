@@ -252,6 +252,9 @@ struct fuse_io_priv {
 	size_t size;
 	__u64 offset;
 	bool write;
+#ifndef __GENKSYMS__
+	bool should_dirty;
+#endif
 	int err;
 	struct kiocb *iocb;
 	struct file *file;

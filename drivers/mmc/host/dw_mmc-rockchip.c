@@ -301,6 +301,7 @@ static unsigned long dw_mci_rk3288_dwmmc_caps[4] = {
 	MMC_CAP_CMD23, /* sdio0 */
 	MMC_CAP_CMD23, /* sdio1 */
 };
+
 static const struct dw_mci_drv_data rk2928_drv_data = {
 	.init			= dw_mci_rockchip_init,
 };

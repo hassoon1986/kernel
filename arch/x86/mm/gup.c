@@ -65,6 +65,16 @@ retry:
 #endif
 }
 
+static void undo_dev_pagemap(int *nr, int nr_start, struct page **pages)
+{
+	while ((*nr) - nr_start) {
+		struct page *page = pages[--(*nr)];
+
+		ClearPageReferenced(page);
+		put_page(page);
+	}
+}
+
 /*
  * 'pteval' can come from a pte, pmd or pud.  We only check
  * _PAGE_PRESENT, _PAGE_USER, and _PAGE_RW in here which are the
@@ -85,16 +95,6 @@ static inline int pte_allows_gup(unsigned long pteval, int write)
 		return 0;
 
 	return 1;
-}
-
-static void undo_dev_pagemap(int *nr, int nr_start, struct page **pages)
-{
-	while ((*nr) - nr_start) {
-		struct page *page = pages[--(*nr)];
-
-		ClearPageReferenced(page);
-		put_page(page);
-	}
 }
 
 /*

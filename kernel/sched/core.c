@@ -8321,11 +8321,9 @@ void sched_destroy_group(struct task_group *tg)
 void sched_offline_group(struct task_group *tg)
 {
 	unsigned long flags;
-	int i;
 
 	/* end participation in shares distribution */
-	for_each_possible_cpu(i)
-		unregister_fair_sched_group(tg, i);
+	unregister_fair_sched_group(tg);
 
 	spin_lock_irqsave(&task_group_lock, flags);
 	list_del_rcu(&tg->list);
@@ -9220,16 +9218,6 @@ void dump_cpu_task(int cpu)
 }
 
 /*
- * Bootline option to disable sched_rt_runtime.
- */
-static int __init parse_nortsched(char *arg)
-{
-	sysctl_sched_rt_runtime = -1;
-	return 0;
-}
-early_param("nortsched", parse_nortsched);
-
-/*
  * Nice levels are multiplicative, with a gentle 10% change for every
  * nice level changed. I.e. when a CPU-bound task goes from nice 0 to
  * nice 1, it will get ~10% less CPU time than another CPU-bound task
@@ -9270,3 +9258,12 @@ const u32 sched_prio_to_wmult[40] = {
  /*  15 */ 119304647, 148102320, 186737708, 238609294, 286331153,
 };
 
+/*
+ * Bootline option to disable sched_rt_runtime.
+ */
+static int __init parse_nortsched(char *arg)
+{
+	sysctl_sched_rt_runtime = -1;
+	return 0;
+}
+early_param("nortsched", parse_nortsched);

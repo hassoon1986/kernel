@@ -80,31 +80,6 @@ struct diag210 {
 
 extern int diag210(struct diag210 *addr);
 
-enum diag26c_sc {
-	DIAG26C_MAC_SERVICES = 0x00000030
-};
-
-enum diag26c_version {
-	DIAG26C_VERSION2 = 0x00000002	/* z/VM 5.4.0 */
-};
-
-#define DIAG26C_GET_MAC	0x0000
-struct diag26c_mac_req {
-	u32	resp_buf_len;
-	u32	resp_version;
-	u16	op_code;
-	u16	devno;
-	u8	res[4];
-};
-
-struct diag26c_mac_resp {
-	u32	version;
-	u8	mac[ETH_ALEN];
-	u8	res[2];
-} __aligned(8);
-
-int diag26c(void *req, void *resp, enum diag26c_sc subcode);
-
 /* bit is set in flags, when physical cpu info is included in diag 204 data */
 #define DIAG204_LPAR_PHYS_FLG 0x80
 #define DIAG204_LPAR_NAME_LEN 8		/* lpar name len in diag 204 data */
@@ -252,6 +227,30 @@ struct diag204_x_phys_block {
 	struct diag204_x_phys_cpu cpus[];
 } __packed;
 
+enum diag26c_sc {
+	DIAG26C_MAC_SERVICES = 0x00000030
+};
+
+enum diag26c_version {
+	DIAG26C_VERSION2 = 0x00000002	/* z/VM 5.4.0 */
+};
+
+#define DIAG26C_GET_MAC	0x0000
+struct diag26c_mac_req {
+	u32	resp_buf_len;
+	u32	resp_version;
+	u16	op_code;
+	u16	devno;
+	u8	res[4];
+};
+
+struct diag26c_mac_resp {
+	u32	version;
+	u8	mac[ETH_ALEN];
+	u8	res[2];
+} __aligned(8);
+
 int diag204(unsigned long subcode, unsigned long size, void *addr);
 int diag224(void *ptr);
+int diag26c(void *req, void *resp, enum diag26c_sc subcode);
 #endif /* _ASM_S390_DIAG_H */

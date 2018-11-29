@@ -1486,10 +1486,9 @@ static int dasd_eckd_verify_path(struct dasd_device *device, __u8 lpm)
 
 static void dasd_eckd_reset_path(struct dasd_device *device, __u8 pm)
 {
-	struct dasd_eckd_private *private;
+	struct dasd_eckd_private *private = device->private;
 	unsigned long flags;
 
-	private = (struct dasd_eckd_private *) device->private;
 	if (!private->fcx_max_data)
 		private->fcx_max_data = get_fcx_max_data(device);
 	spin_lock_irqsave(get_ccwdev_lock(device->cdev), flags);

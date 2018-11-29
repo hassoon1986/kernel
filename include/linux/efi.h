@@ -647,6 +647,14 @@ void efi_native_runtime_setup(void);
 #define EFI_PROPERTIES_TABLE_GUID \
     EFI_GUID(  0x880aaca3, 0x4adc, 0x4a04, 0x90, 0x79, 0xb7, 0x47, 0x34, 0x08, 0x25, 0xe5 )
 
+#define EFI_MEMORY_ATTRIBUTES_TABLE_GUID \
+	EFI_GUID(0xdcfa911d, 0x26eb, 0x469f, \
+		 0xa2, 0x20, 0x38, 0xb7, 0xdc, 0x46, 0x12, 0x20)
+
+#define EFI_CONSOLE_OUT_DEVICE_GUID \
+	EFI_GUID(0xd3b36f2c, 0xd551, 0x11d4, \
+		 0x9a, 0x46, 0x00, 0x90, 0x27, 0x3f, 0xc1, 0x4d)
+
 #define EFI_CERT_SHA256_GUID \
     EFI_GUID(  0xc1c41626, 0x504c, 0x4092, 0xac, 0xa9, 0x41, 0xf9, 0x36, 0x93, 0x43, 0x28 )
 
@@ -670,14 +678,6 @@ void efi_native_runtime_setup(void);
 
 #define EFI_SHIM_LOCK_GUID \
     EFI_GUID(  0x605dab50, 0xe046, 0x4300, 0xab, 0xb6, 0x3d, 0xd8, 0x10, 0xdd, 0x8b, 0x23 )
-
-#define EFI_CONSOLE_OUT_DEVICE_GUID \
-	EFI_GUID(0xd3b36f2c, 0xd551, 0x11d4, \
-		 0x9a, 0x46, 0x00, 0x90, 0x27, 0x3f, 0xc1, 0x4d)
-
-#define EFI_MEMORY_ATTRIBUTES_TABLE_GUID \
-	EFI_GUID(0xdcfa911d, 0x26eb, 0x469f, \
-		 0xa2, 0x20, 0x38, 0xb7, 0xdc, 0x46, 0x12, 0x20)
 
 typedef struct {
 	efi_guid_t guid;
@@ -924,6 +924,14 @@ typedef struct {
 
 #define EFI_INVALID_TABLE_ADDR		(~0UL)
 
+typedef struct {
+	u32 version;
+	u32 num_entries;
+	u32 desc_size;
+	u32 reserved;
+	efi_memory_desc_t entry[0];
+} efi_memory_attributes_table_t;
+
 typedef struct  {
 	efi_guid_t signature_owner;
 	u8 signature_data[];
@@ -937,14 +945,6 @@ typedef struct {
 	u8 signature_header[];
 	/* efi_signature_data_t signatures[][] */
 } efi_signature_list_t;
-
-typedef struct {
-	u32 version;
-	u32 num_entries;
-	u32 desc_size;
-	u32 reserved;
-	efi_memory_desc_t entry[0];
-} efi_memory_attributes_table_t;
 
 /*
  * All runtime access to EFI goes through this structure:

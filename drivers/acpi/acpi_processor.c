@@ -567,6 +567,22 @@ static struct acpi_scan_handler processor_handler = {
 	},
 };
 
+static int acpi_processor_container_attach(struct acpi_device *dev,
+					   const struct acpi_device_id *id)
+{
+	return 1;
+}
+
+static const struct acpi_device_id processor_container_ids[] = {
+	{ ACPI_PROCESSOR_CONTAINER_HID, },
+	{ }
+};
+
+static struct acpi_scan_handler processor_container_handler = {
+	.ids = processor_container_ids,
+	.attach = acpi_processor_container_attach,
+};
+
 /* The number of the unique processor IDs */
 static int nr_unique_ids __initdata;
 
@@ -684,22 +700,6 @@ bool acpi_duplicate_processor_id(int proc_id)
 	}
 	return false;
 }
-
-static int acpi_processor_container_attach(struct acpi_device *dev,
-					   const struct acpi_device_id *id)
-{
-	return 1;
-}
-
-static const struct acpi_device_id processor_container_ids[] = {
-	{ ACPI_PROCESSOR_CONTAINER_HID, },
-	{ }
-};
-
-static struct acpi_scan_handler processor_container_handler = {
-	.ids = processor_container_ids,
-	.attach = acpi_processor_container_attach,
-};
 
 void __init acpi_processor_init(void)
 {

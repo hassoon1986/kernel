@@ -3780,15 +3780,6 @@ H_RANDOM hypercall backed by a hardware random-number generator.
 If present, the kernel H_RANDOM handler can be enabled for guest use
 with the KVM_CAP_PPC_ENABLE_HCALL capability.
 
-8.8 KVM_CAP_X86_GUEST_MWAIT
-
-Architectures: x86
-
-This capability indicates that guest using memory monotoring instructions
-(MWAIT/MWAITX) to stop the virtual CPU will not cause a VM exit.  As such time
-spent while virtual CPU is halted in this way will then be accounted for as
-guest running time on the host (as opposed to e.g. HLT).
-
 8.2 KVM_CAP_HYPERV_SYNIC
 
 Architectures: x86
@@ -3801,6 +3792,7 @@ In order to use SynIC, it has to be activated by setting this
 capability via KVM_ENABLE_CAP ioctl on the vcpu fd. Note that this
 will disable the use of APIC hardware virtualization even if supported
 by the CPU, as it's incompatible with SynIC auto-EOI behavior.
+
 
 8.5 KVM_CAP_ARM_USER_IRQ
 
@@ -3842,3 +3834,12 @@ Currently the following bits are defined for the device_irq_level bitmap:
 Future versions of kvm may implement additional events. These will get
 indicated by returning a higher number from KVM_CHECK_EXTENSION and will be
 listed above.
+
+8.8 KVM_CAP_X86_GUEST_MWAIT
+
+Architectures: x86
+
+This capability indicates that guest using memory monotoring instructions
+(MWAIT/MWAITX) to stop the virtual CPU will not cause a VM exit.  As such time
+spent while virtual CPU is halted in this way will then be accounted for as
+guest running time on the host (as opposed to e.g. HLT).

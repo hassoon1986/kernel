@@ -1761,7 +1761,7 @@ static int mga_vga_mode_valid(struct drm_connector *connector,
 			}
 		} else {
 			if ((bw =
-			     mga_vga_calculate_mode_bandwidth(mode, bpp)) 
+			     mga_vga_calculate_mode_bandwidth(mode, bpp))
 			    > (55000 * 1024)) {
 				DRM_DEBUG_KMS("Mode %d exceeds bandwidth: %d > %d",
 					      mode->base.id, bw, 55000 * 1024);

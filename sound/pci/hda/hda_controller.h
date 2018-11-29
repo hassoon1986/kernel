@@ -151,6 +151,9 @@ struct azx {
 	unsigned int msi:1;
 	unsigned int probing:1; /* codec probing phase */
 	unsigned int snoop:1;
+#ifndef __GENKSYMS__
+	unsigned int uc_buffer:1; /* non-cached pages for stream buffers */
+#endif
 	unsigned int align_buffer_size:1;
 	unsigned int region_requested:1;
 	unsigned int disabled:1; /* disabled by vga_switcheroo */

@@ -48,8 +48,8 @@
 #include "xfs_trans_priv.h"
 #include "xfs_log.h"
 #include "xfs_bmap_btree.h"
-#include "xfs_dmapi.h"
 #include "xfs_dir2_priv.h"
+#include "xfs_dmapi.h"
 
 kmem_zone_t *xfs_inode_zone;
 

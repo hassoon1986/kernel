@@ -109,7 +109,7 @@ static int map_gicc_mpidr(struct acpi_subtable_header *entry,
 }
 
 static phys_cpuid_t map_madt_entry(struct acpi_table_madt *madt,
-			int type, u32 acpi_id)
+				   int type, u32 acpi_id)
 {
 	unsigned long madt_end, entry;
 	phys_cpuid_t phys_id = PHYS_CPUID_INVALID;	/* CPU hardware ID */

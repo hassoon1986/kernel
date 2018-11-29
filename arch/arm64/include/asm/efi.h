@@ -5,8 +5,8 @@
 #include <asm/io.h>
 #include <asm/mmu_context.h>
 #include <asm/neon.h>
-#include <asm/tlbflush.h>
 #include <asm/ptrace.h>
+#include <asm/tlbflush.h>
 
 #ifdef CONFIG_EFI
 extern void efi_init(void);

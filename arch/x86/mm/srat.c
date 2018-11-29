@@ -22,7 +22,6 @@
 #include <asm/apic.h>
 #include <asm/uv/uv.h>
 
-
 /* Callback for Proximity Domain -> x2APIC mapping */
 void __init
 acpi_numa_x2apic_affinity_init(struct acpi_srat_x2apic_cpu_affinity *pa)

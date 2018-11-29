@@ -968,6 +968,7 @@ static void fc_rport_recv_flogi_req(struct fc_lport *lport,
 		else
 			fc_rport_state_enter(rdata, RPORT_ST_PLOGI_WAIT);
 	}
+
 	mutex_unlock(&rdata->rp_mutex);
 	kref_put(&rdata->kref, fc_rport_destroy);
 	fc_frame_free(rx_fp);
