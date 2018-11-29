@@ -680,8 +680,10 @@ static void update_backups(struct super_block *sb,
 		}
 		ext4_debug("update metadata backup %#04lx\n",
 			  (unsigned long)bh->b_blocknr);
-		if ((err = ext4_journal_get_write_access(handle, bh)))
+		if ((err = ext4_journal_get_write_access(handle, bh))) {
+			brelse(bh);
 			break;
+		}
 		lock_buffer(bh);
 		memcpy(bh->b_data, data, size);
 		if (rest)
