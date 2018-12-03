@@ -271,7 +271,10 @@ vsx_unavailable_pSeries_1:
 	EXCEPTION_PROLOG_0(PACA_EXGEN)
 	b	vsx_unavailable_pSeries
 
+facility_unavailable_pSeries_1:
 	. = 0xf60
+	SET_SCRATCH0(r13)
+	EXCEPTION_PROLOG_0(PACA_EXGEN)
 	b	facility_unavailable_pSeries
 
 #ifdef CONFIG_CBE_RAS
