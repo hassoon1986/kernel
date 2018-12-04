@@ -568,6 +568,7 @@ static void xenvif_rx_action(struct xenvif_queue *queue)
 	skb_queue_head_init(&rxq);
 
 	while (xenvif_rx_ring_slots_available(queue)
+	       && npo.meta_prod < ARRAY_SIZE(queue->meta) - 1
 	       && (skb = xenvif_rx_dequeue(queue)) != NULL) {
 		queue->last_rx_time = jiffies;
 
