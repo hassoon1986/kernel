@@ -153,12 +153,6 @@ static int create_xattr(struct ubifs_info *c, struct inode *host,
 	ui->data_len = size;
 
 	mutex_lock(&host_ui->ui_mutex);
-
-	if (!host->i_nlink) {
-		err = -ENOENT;
-		goto out_noent;
-	}
-
 	host->i_ctime = ubifs_current_time(host);
 	host_ui->xattr_cnt += 1;
 	host_ui->xattr_size += CALC_DENT_SIZE(nm->len);
@@ -180,7 +174,6 @@ out_cancel:
 	host_ui->xattr_size -= CALC_DENT_SIZE(nm->len);
 	host_ui->xattr_size -= CALC_XATTR_BYTES(size);
 	host_ui->xattr_names -= nm->len;
-out_noent:
 	mutex_unlock(&host_ui->ui_mutex);
 out_free:
 	make_bad_inode(inode);
@@ -230,12 +223,6 @@ static int change_xattr(struct ubifs_info *c, struct inode *host,
 	mutex_unlock(&ui->ui_mutex);
 
 	mutex_lock(&host_ui->ui_mutex);
-
-	if (!host->i_nlink) {
-		err = -ENOENT;
-		goto out_noent;
-	}
-
 	host->i_ctime = ubifs_current_time(host);
 	host_ui->xattr_size -= CALC_XATTR_BYTES(ui->data_len);
 	host_ui->xattr_size += CALC_XATTR_BYTES(size);
@@ -257,7 +244,6 @@ static int change_xattr(struct ubifs_info *c, struct inode *host,
 out_cancel:
 	host_ui->xattr_size -= CALC_XATTR_BYTES(size);
 	host_ui->xattr_size += CALC_XATTR_BYTES(ui->data_len);
-out_noent:
 	mutex_unlock(&host_ui->ui_mutex);
 	make_bad_inode(inode);
 out_free:
@@ -530,12 +516,6 @@ static int remove_xattr(struct ubifs_info *c, struct inode *host,
 		return err;
 
 	mutex_lock(&host_ui->ui_mutex);
-
-	if (!host->i_nlink) {
-		err = -ENOENT;
-		goto out_noent;
-	}
-
 	host->i_ctime = ubifs_current_time(host);
 	host_ui->xattr_cnt -= 1;
 	host_ui->xattr_size -= CALC_DENT_SIZE(nm->len);
@@ -555,7 +535,6 @@ out_cancel:
 	host_ui->xattr_size += CALC_DENT_SIZE(nm->len);
 	host_ui->xattr_size += CALC_XATTR_BYTES(ui->data_len);
 	host_ui->xattr_names += nm->len;
-out_noent:
 	mutex_unlock(&host_ui->ui_mutex);
 	ubifs_release_budget(c, &req);
 	make_bad_inode(inode);
@@ -596,9 +575,6 @@ int ubifs_removexattr(struct dentry *dentry, const char *name)
 	dbg_gen("xattr '%s', ino %lu ('%pd')", name,
 		host->i_ino, dentry);
 	ubifs_assert(mutex_is_locked(&host->i_mutex));
-
-	if (!host->i_nlink)
-		return -ENOENT;
 
 	err = check_namespace(&nm);
 	if (err < 0)
