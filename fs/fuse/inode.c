@@ -380,6 +380,7 @@ static void fuse_put_super(struct super_block *sb)
 	struct fuse_conn *fc = get_fuse_conn_super(sb);
 
 	fuse_send_destroy(fc);
+	fuse_wait_aborted(fc);
 	fuse_conn_kill(fc);
 	fuse_conn_put(fc);
 }
