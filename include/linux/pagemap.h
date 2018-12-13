@@ -536,6 +536,8 @@ static inline void wait_on_page_locked(struct page *page)
 		wait_on_page_bit(page, PG_locked);
 }
 
+extern void put_and_wait_on_page_locked(struct page *page);
+
 /* 
  * Wait for a page to complete writeback
  */

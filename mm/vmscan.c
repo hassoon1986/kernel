@@ -1219,11 +1219,11 @@ static unsigned long shrink_page_list(struct list_head *page_list,
 		/*
 		 * At this point, we have no other references and there is
 		 * no way to pick any more up (removed from LRU, removed
-		 * from pagecache). Can use non-atomic bitops now (and
-		 * we obviously don't have to worry about waking up a process
-		 * waiting on the page lock, because there are no references.
+		 * from pagecache). We could use non-atomic bitops now, but
+		 * beware: earlier calls to put_and_wait_on_page_locked()
+		 * might still be waiting.
 		 */
-		__clear_page_locked(page);
+		unlock_page(page);
 free_it:
 		nr_reclaimed++;
 

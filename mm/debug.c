@@ -42,19 +42,33 @@ const struct trace_print_flags vmaflag_names[] = {
 
 void __dump_page(struct page *page, const char *reason)
 {
-	pr_emerg("page:%p count:%d mapcount:%d mapping:%p index:%#lx\n",
+	struct address_space *mapping = page_mapping(page);
+
+	pr_warn("page:%p count:%d mapcount:%d mapping:%p index:%#lx\n",
 		  page, atomic_read(&page->_count), page_mapcount(page),
 		  page->mapping, page->index);
 	BUILD_BUG_ON(ARRAY_SIZE(pageflag_names) != __NR_PAGEFLAGS + 1);
+	if (PageAnon(page))
+		pr_warn("anon ");
+	else if (PageKsm(page))
+		pr_warn("ksm ");
+	else if (mapping) {
+		pr_warn("%ps ", mapping->a_ops);
+		if (mapping->host->i_dentry.first) {
+			struct dentry *dentry;
+			dentry = container_of(mapping->host->i_dentry.first, struct dentry, d_u.d_alias);
+			pr_warn("name:\"%pd\" ", dentry);
+		}
+	}
 
-	pr_emerg("flags: %#lx(%pGp)\n", page->flags, &page->flags);
+	pr_warn("flags: %#lx(%pGp)\n", page->flags, &page->flags);
 
 	if (reason)
-		pr_alert("page dumped because: %s\n", reason);
+		pr_warn("page dumped because: %s\n", reason);
 
 #ifdef CONFIG_MEMCG
 	if (page->mem_cgroup)
-		pr_alert("page->mem_cgroup:%p\n", page->mem_cgroup);
+		pr_warn("page->mem_cgroup:%p\n", page->mem_cgroup);
 #endif
 }
 

@@ -853,6 +853,31 @@ int wait_on_page_bit_killable_timeout(struct page *page,
 }
 EXPORT_SYMBOL_GPL(wait_on_page_bit_killable_timeout);
 
+void put_and_wait_on_page_locked(struct page *page)
+{
+	DEFINE_WAIT_BIT(wb, &page->flags, PG_locked);
+	wait_queue_head_t *wq;
+	bool is_locked;
+
+	if (!PageLocked(page)) {
+		put_page(page);
+		return;
+	}
+
+	wq = page_waitqueue(page);
+
+	prepare_to_wait(wq, &wb.wait, TASK_UNINTERRUPTIBLE);
+
+	is_locked = PageLocked(page);
+
+	put_page(page);
+
+	if (is_locked)
+		io_schedule();
+
+	finish_wait(wq, &wb.wait);
+}
+
 /**
  * add_page_wait_queue - Add an arbitrary waiter to a page's wait queue
  * @page: Page defining the wait queue of interest
