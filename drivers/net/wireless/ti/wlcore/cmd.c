@@ -35,7 +35,6 @@
 #include "wl12xx_80211.h"
 #include "cmd.h"
 #include "event.h"
-#include "ps.h"
 #include "tx.h"
 #include "hw_ops.h"
 
@@ -192,10 +191,6 @@ int wlcore_cmd_wait_for_event_or_timeout(struct wl1271 *wl,
 
 	timeout_time = jiffies + msecs_to_jiffies(WL1271_EVENT_TIMEOUT);
 
-	ret = wl1271_ps_elp_wakeup(wl);
-	if (ret < 0)
-		goto free_vector;
-
 	do {
 		if (time_after(jiffies, timeout_time)) {
 			wl1271_debug(DEBUG_CMD, "timeout waiting for event %d",
@@ -227,8 +222,6 @@ int wlcore_cmd_wait_for_event_or_timeout(struct wl1271 *wl,
 	} while (!event);
 
 out:
-	wl1271_ps_elp_sleep(wl);
-free_vector:
 	kfree(events_vector);
 	return ret;
 }

@@ -336,12 +336,12 @@ struct usb_host_bos {
 	void *suse_kabi_padding;
 };
 
-int __usb_get_extra_descriptor(char *buffer, unsigned size,
-	unsigned char type, void **ptr);
+int __usb_get_extra_descriptor5(char *buffer, unsigned size,
+	unsigned char type, void **ptr, size_t min);
 #define usb_get_extra_descriptor(ifpoint, type, ptr) \
-				__usb_get_extra_descriptor((ifpoint)->extra, \
+				__usb_get_extra_descriptor5((ifpoint)->extra, \
 				(ifpoint)->extralen, \
-				type, (void **)ptr)
+				type, (void **)ptr, sizeof(**(ptr)))
 
 /* ----------------------------------------------------------------------- */
 
