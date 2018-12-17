@@ -314,11 +314,11 @@ ENTRY(ia32_syscall)
 	   this could be a problem. */
 	SAVE_ARGS 0,0,1
 	GET_THREAD_INFO(%r10)
-	orl   $TS_COMPAT,TI_status(%r10)
-	testl $_TIF_WORK_SYSCALL_ENTRY,TI_flags(%r10)
 
 	ENABLE_IBRS
 
+	orl   $TS_COMPAT,TI_status(%r10)
+	testl $_TIF_WORK_SYSCALL_ENTRY,TI_flags(%r10)
 	jnz ia32_tracesys
 .Lia32_check_call:
 	cmpl $IA32_NR_syscalls,%eax
