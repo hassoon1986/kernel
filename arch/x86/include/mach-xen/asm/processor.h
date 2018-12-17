@@ -125,7 +125,10 @@ struct cpuinfo_x86 {
 	u32			microcode;
 #endif
 #ifndef __GENKSYMS__
-	/* Address space bits used by the cache internally */
+	/*
+	 * Address space bits used by the cache internally
+	 * NOTE: only to be used for l1tf mitigation
+	 */
 	u8			x86_cache_bits;
 #endif
 } __attribute__((__aligned__(SMP_CACHE_BYTES)));
