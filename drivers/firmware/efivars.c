@@ -1147,7 +1147,7 @@ static int efivarfs_create_dentry(struct efi_variable *new_var)
 	struct efivars *efivars = &__efivars;
 	unsigned long strsize1, strsize2;
 	struct efivar_entry *entry, *n;
-	int len, i, err, found = 0;
+	int len, i, err = -ENOMEM, found = 0;
 	struct inode *inode = NULL;
 	unsigned long size = 0;
 	char *name;
