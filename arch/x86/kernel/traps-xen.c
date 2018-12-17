@@ -815,7 +815,10 @@ EXPORT_SYMBOL_GPL(math_state_restore);
 dotraplinkage void __kprobes
 do_device_not_available(struct pt_regs *regs, long error_code)
 {
-	BUG_ON(use_eager_fpu());
+	if (use_eager_fpu()) {
+		WARN(printk_ratelimit(), "Perhaps a KMP which was not rebuilt against the kernel protected against CVE-2018-3665 was loaded. Your system might be vulnerable, please rebuild all external modules. Trying to recover...");
+		clts();
+	}
 #ifdef CONFIG_MATH_EMULATION
 	if (read_cr0() & X86_CR0_EM) {
 		struct math_emu_info info = { };
