@@ -10475,6 +10475,12 @@ lpfc_sli_abort_els_cmpl(struct lpfc_hba *phba, struct lpfc_iocbq *cmdiocb,
 
 		spin_lock_irq(&phba->hbalock);
 		if (phba->sli_rev < LPFC_SLI_REV4) {
+			if (irsp->ulpCommand == CMD_ABORT_XRI_CX &&
+			    irsp->ulpStatus == IOSTAT_LOCAL_REJECT &&
+			    irsp->un.ulpWord[4] == IOERR_ABORT_REQUESTED) {
+				spin_unlock_irq(&phba->hbalock);
+				goto release_iocb;
+			}
 			if (abort_iotag != 0 &&
 				abort_iotag <= phba->sli.last_iotag)
 				abort_iocb =
@@ -10496,6 +10502,7 @@ lpfc_sli_abort_els_cmpl(struct lpfc_hba *phba, struct lpfc_iocbq *cmdiocb,
 
 		spin_unlock_irq(&phba->hbalock);
 	}
+release_iocb:
 	lpfc_sli_release_iocbq(phba, cmdiocb);
 	return;
 }
@@ -10552,6 +10559,7 @@ lpfc_sli_abort_iotag_issue(struct lpfc_hba *phba, struct lpfc_sli_ring *pring,
 	IOCB_t *iabt = NULL;
 	int retval;
 	unsigned long iflags;
+	struct lpfc_nodelist *ndlp;
 
 	lockdep_assert_held(&phba->hbalock);
 
@@ -10582,9 +10590,13 @@ lpfc_sli_abort_iotag_issue(struct lpfc_hba *phba, struct lpfc_sli_ring *pring,
 	if (phba->sli_rev == LPFC_SLI_REV4) {
 		iabt->un.acxri.abortIoTag = cmdiocb->sli4_xritag;
 		iabt->un.acxri.abortContextTag = cmdiocb->iotag;
-	}
-	else
+	} else {
 		iabt->un.acxri.abortIoTag = icmd->ulpIoTag;
+		if (pring->ringno == LPFC_ELS_RING) {
+			ndlp = (struct lpfc_nodelist *)(cmdiocb->context1);
+			iabt->un.acxri.abortContextTag = ndlp->nlp_rpi;
+		}
+	}
 	iabt->ulpLe = 1;
 	iabt->ulpClass = icmd->ulpClass;
 
@@ -10863,10 +10875,11 @@ lpfc_sli_validate_fcp_iocb(struct lpfc_iocbq *iocbq, struct lpfc_vport *vport,
 	struct lpfc_scsi_buf *lpfc_cmd;
 	int rc = 1;
 
-	if (!(iocbq->iocb_flag &  LPFC_IO_FCP))
+	if (iocbq->vport != vport)
 		return rc;
 
-	if (iocbq->vport != vport)
+	if (!(iocbq->iocb_flag &  LPFC_IO_FCP) ||
+	    !(iocbq->iocb_flag & LPFC_IO_ON_TXCMPLQ))
 		return rc;
 
 	lpfc_cmd = container_of(iocbq, struct lpfc_scsi_buf, cur_iocbq);
@@ -10876,13 +10889,13 @@ lpfc_sli_validate_fcp_iocb(struct lpfc_iocbq *iocbq, struct lpfc_vport *vport,
 
 	switch (ctx_cmd) {
 	case LPFC_CTX_LUN:
-		if ((lpfc_cmd->rdata->pnode) &&
+		if ((lpfc_cmd->rdata) && (lpfc_cmd->rdata->pnode) &&
 		    (lpfc_cmd->rdata->pnode->nlp_sid == tgt_id) &&
 		    (scsilun_to_int(&lpfc_cmd->fcp_cmnd->fcp_lun) == lun_id))
 			rc = 0;
 		break;
 	case LPFC_CTX_TGT:
-		if ((lpfc_cmd->rdata->pnode) &&
+		if ((lpfc_cmd->rdata) && (lpfc_cmd->rdata->pnode) &&
 		    (lpfc_cmd->rdata->pnode->nlp_sid == tgt_id))
 			rc = 0;
 		break;
@@ -10996,6 +11009,10 @@ lpfc_sli_abort_iocb(struct lpfc_vport *vport, struct lpfc_sli_ring *pring,
 	IOCB_t *cmd = NULL;
 	int errcnt = 0, ret_val = 0;
 	int i;
+
+	/* all I/Os are in process of being flushed */
+	if (phba->hba_flag & HBA_FCP_IOQ_FLUSH)
+		return errcnt;
 
 	for (i = 1; i <= phba->sli.last_iotag; i++) {
 		iocbq = phba->sli.iocbq_lookup[i];

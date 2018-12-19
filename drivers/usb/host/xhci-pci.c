@@ -210,6 +210,11 @@ static void xhci_pci_quirks(struct device *dev, struct xhci_hcd *xhci)
 			pdev->device == 0x1142)
 		xhci->quirks |= XHCI_TRUST_TX_LENGTH;
 
+	if ((pdev->vendor == PCI_VENDOR_ID_BROADCOM ||
+	     pdev->vendor == PCI_VENDOR_ID_CAVIUM) &&
+	     pdev->device == 0x9026)
+		xhci->quirks |= XHCI_RESET_PLL_ON_DISCONNECT;
+
 	if (xhci->quirks & XHCI_RESET_ON_RESUME)
 		xhci_dbg_trace(xhci, trace_xhci_dbg_quirks,
 				"QUIRK: Resetting on resume");
