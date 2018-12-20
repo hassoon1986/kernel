@@ -56,6 +56,11 @@ extern void tracepoint_probe_update_all(void);
 
 #ifdef CONFIG_MODULES
 bool trace_module_has_bad_taint(struct module *mod);
+#else
+static inline bool trace_module_has_bad_taint(struct module *mod)
+{
+	return false;
+}
 #endif
 
 struct tracepoint_iter {
