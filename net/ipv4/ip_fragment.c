@@ -379,7 +379,7 @@ static int ip_frag_queue(struct ipq *qp, struct sk_buff *skb)
 		 */
 		if (end < qp->q.len ||
 		    ((qp->q.flags & INET_FRAG_LAST_IN) && end != qp->q.len))
-			goto err;
+			goto discard_qp;
 		qp->q.flags |= INET_FRAG_LAST_IN;
 		qp->q.len = end;
 	} else {
@@ -391,20 +391,20 @@ static int ip_frag_queue(struct ipq *qp, struct sk_buff *skb)
 		if (end > qp->q.len) {
 			/* Some bits beyond end -> corruption. */
 			if (qp->q.flags & INET_FRAG_LAST_IN)
-				goto err;
+				goto discard_qp;
 			qp->q.len = end;
 		}
 	}
 	if (end == offset)
-		goto err;
+		goto discard_qp;
 
 	err = -ENOMEM;
 	if (!pskb_pull(skb, skb_network_offset(skb) + ihl))
-		goto err;
+		goto discard_qp;
 
 	err = pskb_trim_rcsum(skb, end - offset);
 	if (err)
-		goto err;
+		goto discard_qp;
 
 	/* Find out which fragments are in front and at the back of us
 	 * in the chain of fragments so far.  We must know where to put
@@ -432,13 +432,18 @@ found:
 	 * We do the same here for IPv4.
 	 */
 	/* Is there an overlap with the previous fragment? */
+	err = -EINVAL;
 	if (prev &&
 	    (FRAG_CB(prev)->offset + prev->len) > offset)
-		goto discard_qp;
+		goto overlap;
 
 	/* Is there an overlap with the next fragment? */
-	if (next && FRAG_CB(next)->offset < end)
-		goto discard_qp;
+	if (next && FRAG_CB(next)->offset < end) {
+		/* If it's a duplicate, drop only the incoming fragment. */
+		if (FRAG_CB(next)->offset == offset && next->len == skb->len)
+			goto err;
+		goto overlap;
+	}
 
 	FRAG_CB(skb)->offset = offset;
 
@@ -479,16 +484,18 @@ found:
 		skb->_skb_refdst = 0UL;
 		err = ip_frag_reasm(qp, prev, dev);
 		skb->_skb_refdst = orefdst;
+		if (err)
+			inet_frag_kill(&qp->q, &ip4_frags);
 		return err;
 	}
 
 	skb_dst_drop(skb);
 	return -EINPROGRESS;
 
+overlap:
+	IP_INC_STATS(net, IPSTATS_MIB_REASMFAILS);
 discard_qp:
 	inet_frag_kill(&qp->q, &ip4_frags);
-	err = -EINVAL;
-	IP_INC_STATS(net, IPSTATS_MIB_REASMFAILS);
 err:
 	kfree_skb(skb);
 	return err;
@@ -505,6 +512,7 @@ static int ip_frag_reasm(struct ipq *qp, struct sk_buff *prev,
 	struct sk_buff *fp, *head = qp->q.fragments;
 	int len;
 	int ihlen;
+	int delta;
 	int err;
 	u8 ecn;
 
@@ -545,9 +553,15 @@ static int ip_frag_reasm(struct ipq *qp, struct sk_buff *prev,
 	if (len > 65535)
 		goto out_oversize;
 
+	delta = - head->truesize;
+
 	/* Head of list must not be cloned. */
 	if (skb_unclone(head, GFP_ATOMIC))
 		goto out_nomem;
+
+	delta += head->truesize;
+	if (delta)
+		add_frag_mem_limit(qp->q.net, delta);
 
 	/* If the first fragment is fragmented itself, we split
 	 * it to two chunks: the first with data and paged part

@@ -247,7 +247,7 @@ static int ip6_frag_queue(struct frag_queue *fq, struct sk_buff *skb,
 		 */
 		if (end < fq->q.len ||
 		    ((fq->q.flags & INET_FRAG_LAST_IN) && end != fq->q.len))
-			goto err;
+			goto discard_fq;
 		fq->q.flags |= INET_FRAG_LAST_IN;
 		fq->q.len = end;
 	} else {
@@ -267,20 +267,20 @@ static int ip6_frag_queue(struct frag_queue *fq, struct sk_buff *skb,
 		if (end > fq->q.len) {
 			/* Some bits beyond end -> corruption. */
 			if (fq->q.flags & INET_FRAG_LAST_IN)
-				goto err;
+				goto discard_fq;
 			fq->q.len = end;
 		}
 	}
 
 	if (end == offset)
-		goto err;
+		goto discard_fq;
 
 	/* Point into the IP datagram 'data' part. */
 	if (!pskb_pull(skb, (u8 *) (fhdr + 1) - skb->data))
-		goto err;
+		goto discard_fq;
 
 	if (pskb_trim_rcsum(skb, end - offset))
-		goto err;
+		goto discard_fq;
 
 	/* Find out which fragments are in front and at the back of us
 	 * in the chain of fragments so far.  We must know where to put
@@ -381,7 +381,7 @@ static int ip6_frag_reasm(struct frag_queue *fq, struct sk_buff *prev,
 {
 	struct net *net = container_of(fq->q.net, struct net, ipv6.frags);
 	struct sk_buff *fp, *head = fq->q.fragments;
-	int    payload_len;
+	int    payload_len, delta;
 	unsigned int nhoff;
 	int sum_truesize;
 	u8 ecn;
@@ -422,9 +422,15 @@ static int ip6_frag_reasm(struct frag_queue *fq, struct sk_buff *prev,
 	if (payload_len > IPV6_MAXPLEN)
 		goto out_oversize;
 
+	delta = - head->truesize;
+
 	/* Head of list must not be cloned. */
 	if (skb_unclone(head, GFP_ATOMIC))
 		goto out_oom;
+
+	delta += head->truesize;
+	if (delta)
+		add_frag_mem_limit(fq->q.net, delta);
 
 	/* If the first fragment is fragmented itself, we split
 	 * it to two chunks: the first with data and paged part
@@ -515,6 +521,7 @@ out_fail:
 	rcu_read_lock();
 	IP6_INC_STATS_BH(net, __in6_dev_get(dev), IPSTATS_MIB_REASMFAILS);
 	rcu_read_unlock();
+	inet_frag_kill(&fq->q, &ip6_frags);
 	return -1;
 }
 
