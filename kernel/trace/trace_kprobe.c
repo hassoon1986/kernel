@@ -766,7 +766,7 @@ end:
 }
 
 /* Split symbol and offset. */
-static int split_symbol_offset(char *symbol, unsigned long *offset)
+static int split_symbol_offset(char *symbol, long *offset)
 {
 	char *tmp;
 	int ret;
@@ -774,10 +774,9 @@ static int split_symbol_offset(char *symbol, unsigned long *offset)
 	if (!offset)
 		return -EINVAL;
 
-	tmp = strchr(symbol, '+');
+	tmp = strpbrk(symbol, "+-");
 	if (tmp) {
-		/* skip sign because strict_strtol doesn't accept '+' */
-		ret = strict_strtoul(tmp + 1, 0, offset);
+		ret = strict_strtol(tmp, 0, offset);
 		if (ret)
 			return ret;
 		*tmp = '\0';
@@ -1011,7 +1010,7 @@ static int create_trace_probe(int argc, char **argv)
 	int is_return = 0, is_delete = 0;
 	char *symbol = NULL, *event = NULL, *group = NULL;
 	char *arg;
-	unsigned long offset = 0;
+	long offset = 0;
 	void *addr = NULL;
 	char buf[MAX_EVENT_NAME_LEN];
 
@@ -1070,30 +1069,25 @@ static int create_trace_probe(int argc, char **argv)
 		pr_info("Probe point is not specified.\n");
 		return -EINVAL;
 	}
-	if (isdigit(argv[1][0])) {
-		if (is_return) {
-			pr_info("Return probe point must be a symbol.\n");
-			return -EINVAL;
-		}
-		/* an address specified */
-		ret = strict_strtoul(&argv[1][0], 0, (unsigned long *)&addr);
-		if (ret) {
-			pr_info("Failed to parse address.\n");
-			return ret;
-		}
-	} else {
+
+	/* try to parse an address. if that fails, try to read the
+	 * input as a symbol. */
+	if (strict_strtoul(argv[1], 0, (unsigned long *)&addr)) {
 		/* a symbol specified */
 		symbol = argv[1];
 		/* TODO: support .init module functions */
 		ret = split_symbol_offset(symbol, &offset);
-		if (ret) {
-			pr_info("Failed to parse symbol.\n");
+		if (ret || offset < 0 || offset > UINT_MAX) {
+			pr_info("Failed to parse either an address or a symbol.\n");
 			return ret;
 		}
 		if (offset && is_return) {
 			pr_info("Return probe must be used without offset.\n");
 			return -EINVAL;
 		}
+	} else if (is_return) {
+		pr_info("Return probe point must be a symbol.\n");
+		return -EINVAL;
 	}
 	argc -= 2; argv += 2;
 

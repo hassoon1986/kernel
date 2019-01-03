@@ -360,6 +360,8 @@ EXPORT_SYMBOL_GPL(ring_buffer_event_data);
 /* Missed count stored at end */
 #define RB_MISSED_STORED	(1 << 30)
 
+#define RB_MISSED_FLAGS		(RB_MISSED_EVENTS|RB_MISSED_STORED)
+
 struct buffer_data_page {
 	u64		 time_stamp;	/* page time stamp */
 	local_t		 commit;	/* write committed index */
@@ -411,7 +413,9 @@ static void rb_init_page(struct buffer_data_page *bpage)
  */
 size_t ring_buffer_page_len(void *page)
 {
-	return local_read(&((struct buffer_data_page *)page)->commit)
+	struct buffer_data_page *bpage = page;
+
+	return (local_read(&bpage->commit) & ~RB_MISSED_FLAGS)
 		+ BUF_PAGE_HDR_SIZE;
 }
 
@@ -1611,7 +1615,7 @@ rb_add_time_stamp(struct ring_buffer_event *event, u64 delta)
 
 /**
  * ring_buffer_update_event - update event type and data
- * @event: the even to update
+ * @event: the event to update
  * @type: the type of event
  * @length: the size of the event field in the ring buffer
  *
@@ -2019,6 +2023,13 @@ __rb_reserve_next(struct ring_buffer_per_cpu *cpu_buffer,
 	/* set write to only the index of the write */
 	write &= RB_WRITE_MASK;
 	tail = write - length;
+
+	/*
+	 * If this is the first commit on the page, then it has the same
+	 * timestamp as the page itself.
+	 */
+	if (!tail)
+		delta = 0;
 
 	/* See if we shot pass the end of this buffer page */
 	if (unlikely(write > BUF_PAGE_SIZE))
@@ -2756,21 +2767,16 @@ static void rb_iter_reset(struct ring_buffer_iter *iter)
 	struct ring_buffer_per_cpu *cpu_buffer = iter->cpu_buffer;
 
 	/* Iterator usage is expected to have record disabled */
-	if (list_empty(&cpu_buffer->reader_page->list)) {
-		iter->head_page = rb_set_head_page(cpu_buffer);
-		if (unlikely(!iter->head_page))
-			return;
-		iter->head = iter->head_page->read;
-	} else {
-		iter->head_page = cpu_buffer->reader_page;
-		iter->head = cpu_buffer->reader_page->read;
-	}
+	iter->head_page = cpu_buffer->reader_page;
+	iter->head = cpu_buffer->reader_page->read;
+
+	iter->cache_reader_page = iter->head_page;
+	iter->cache_read = cpu_buffer->read;
+
 	if (iter->head)
 		iter->read_stamp = cpu_buffer->read_stamp;
 	else
 		iter->read_stamp = iter->head_page->page->time_stamp;
-	iter->cache_reader_page = cpu_buffer->reader_page;
-	iter->cache_read = cpu_buffer->read;
 }
 
 /**
@@ -2803,11 +2809,23 @@ EXPORT_SYMBOL_GPL(ring_buffer_iter_reset);
 int ring_buffer_iter_empty(struct ring_buffer_iter *iter)
 {
 	struct ring_buffer_per_cpu *cpu_buffer;
+	struct buffer_page *reader;
+	struct buffer_page *head_page;
+	struct buffer_page *commit_page;
+	unsigned commit;
 
 	cpu_buffer = iter->cpu_buffer;
 
-	return iter->head_page == cpu_buffer->commit_page &&
-		iter->head == rb_commit_index(cpu_buffer);
+	/* Remember, trace recording is off when iterator is in use */
+	reader = cpu_buffer->reader_page;
+	head_page = cpu_buffer->head_page;
+	commit_page = cpu_buffer->commit_page;
+	commit = rb_page_commit(commit_page);
+
+	return ((iter->head_page == commit_page && iter->head == commit) ||
+		(iter->head_page == reader && commit_page == head_page &&
+		 head_page->read == commit &&
+		 iter->head == rb_page_commit(cpu_buffer->reader_page)));
 }
 EXPORT_SYMBOL_GPL(ring_buffer_iter_empty);
 
@@ -3159,12 +3177,14 @@ rb_iter_peek(struct ring_buffer_iter *iter, u64 *ts)
 		return NULL;
 
 	/*
-	 * We repeat when a time extend is encountered.
-	 * Since the time extend is always attached to a data event,
-	 * we should never loop more than once.
-	 * (We never hit the following condition more than twice).
+	 * We repeat when a time extend is encountered or we hit
+	 * the end of the page. Since the time extend is always attached
+	 * to a data event, we should never loop more than three times.
+	 * Once for going to next page, once on time extend, and
+	 * finally once to get the event.
+	 * (We never hit the following condition more than thrice).
 	 */
-	if (RB_WARN_ON(cpu_buffer, ++nr_loops > 2))
+	if (RB_WARN_ON(cpu_buffer, ++nr_loops > 3))
 		return NULL;
 
 	if (rb_per_cpu_empty(cpu_buffer))
