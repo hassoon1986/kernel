@@ -536,6 +536,8 @@ int nvme_submit_user_cmd(struct request_queue *q, struct nvme_command *cmd,
 static void nvme_keep_alive_end_io(struct request *rq, int error)
 {
 	struct nvme_ctrl *ctrl = rq->end_io_data;
+	unsigned long flags;
+	bool startka = false;
 
 	blk_mq_free_request(rq);
 
@@ -545,9 +547,13 @@ static void nvme_keep_alive_end_io(struct request *rq, int error)
 		return;
 	}
 
-	/* Skip keep-alive if the controller is not live */
-	if (ctrl->state == NVME_CTRL_LIVE)
-		schedule_delayed_work(&ctrl->ka_work, ctrl->kato * HZ);
+	spin_lock_irqsave(&ctrl->lock, flags);
+	if (ctrl->state == NVME_CTRL_LIVE ||
+	    ctrl->state == NVME_CTRL_RECONNECTING)
+		startka = true;
+	spin_unlock_irqrestore(&ctrl->lock, flags);
+	if (startka)
+ 		schedule_delayed_work(&ctrl->ka_work, ctrl->kato * HZ);
 }
 
 static int nvme_keep_alive(struct nvme_ctrl *ctrl)
@@ -575,10 +581,6 @@ static void nvme_keep_alive_work(struct work_struct *work)
 {
 	struct nvme_ctrl *ctrl = container_of(to_delayed_work(work),
 			struct nvme_ctrl, ka_work);
-
-	/* Short-circuit keep-alive during resetting */
-	if (ctrl->state == NVME_CTRL_RESETTING)
-		return;
 
 	if (nvme_keep_alive(ctrl)) {
 		/* allocation failure, reset the controller */
