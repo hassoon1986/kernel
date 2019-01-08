@@ -1082,8 +1082,14 @@ rescan:
 	 * accelerate iso completions ... so spin a while.
 	 */
 	if (qh->hw == NULL) {
-		ehci_vdbg (ehci, "iso delay\n");
-		goto idle_timeout;
+		struct ehci_iso_stream	*stream = ep->hcpriv;
+
+		if (!list_empty(&stream->td_list))
+			goto idle_timeout;
+
+		/* BUG_ON(!list_empty(&stream->free_list)); */
+		kfree(stream);
+		goto done;
 	}
 
 	if (ehci->rh_state < EHCI_RH_RUNNING)
@@ -1124,8 +1130,8 @@ idle_timeout:
 			list_empty (&qh->qtd_list) ? "" : "(has tds)");
 		break;
 	}
+ done:
 	ep->hcpriv = NULL;
-done:
 	spin_unlock_irqrestore (&ehci->lock, flags);
 }
 
