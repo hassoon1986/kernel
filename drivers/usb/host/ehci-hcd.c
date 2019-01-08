@@ -229,22 +229,6 @@ static int ehci_halt (struct ehci_hcd *ehci)
 			  STS_HALT, STS_HALT, 16 * 125);
 }
 
-static int handshake_on_error_set_halt(struct ehci_hcd *ehci, void __iomem *ptr,
-				       u32 mask, u32 done, int usec)
-{
-	int error;
-
-	error = handshake(ehci, ptr, mask, done, usec);
-	if (error) {
-		ehci_halt(ehci);
-		ehci->rh_state = EHCI_RH_HALTED;
-		ehci_err(ehci, "force halt; handshake %p %08x %08x -> %d\n",
-			ptr, mask, done, error);
-	}
-
-	return error;
-}
-
 /* put TDI/ARC silicon into EHCI mode */
 static void tdi_reset (struct ehci_hcd *ehci)
 {
@@ -311,18 +295,13 @@ static void ehci_quiesce (struct ehci_hcd *ehci)
 	/* wait for any schedule enables/disables to take effect */
 	temp = ehci_readl(ehci, &ehci->regs->command) << 10;
 	temp &= STS_ASS | STS_PSS;
-	if (handshake_on_error_set_halt(ehci, &ehci->regs->status,
-					STS_ASS | STS_PSS, temp, 16 * 125))
-		return;
+	handshake(ehci, &ehci->regs->status, STS_ASS | STS_PSS, temp, 16 * 125);
 
 	/* then disable anything that's still active */
 	temp = ehci_readl(ehci, &ehci->regs->command);
 	temp &= ~(CMD_ASE | CMD_IAAD | CMD_PSE);
 	ehci_writel(ehci, temp, &ehci->regs->command);
-
-	/* hardware can take 16 microframes to turn off ... */
-	handshake_on_error_set_halt(ehci, &ehci->regs->status,
-				    STS_ASS | STS_PSS, 0, 16 * 125);
+	handshake(ehci, &ehci->regs->status, STS_ASS | STS_PSS, 0, 16 * 125);
 }
 
 /*-------------------------------------------------------------------------*/
