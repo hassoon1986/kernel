@@ -92,7 +92,6 @@ static const char	hcd_name [] = "ehci_hcd";
 
 #define EHCI_IAA_MSECS		10		/* arbitrary */
 #define EHCI_IO_JIFFIES		(HZ/10)		/* io watchdog > irq_thresh */
-#define EHCI_ASYNC_JIFFIES	(HZ/20)		/* async idle timeout */
 #define EHCI_SHRINK_JIFFIES	(DIV_ROUND_UP(HZ, 200) + 1)
 						/* 5-ms async qh unlink delay */
 
@@ -134,7 +133,7 @@ timer_action(struct ehci_hcd *ehci, enum ehci_timer_action action)
 	 * SHRINK were pending, OFF would never be requested.
 	 */
 	if (timer_pending(&ehci->watchdog)
-			&& ((BIT(TIMER_ASYNC_SHRINK) | BIT(TIMER_ASYNC_OFF))
+			&& (BIT(TIMER_ASYNC_SHRINK)
 				& ehci->actions))
 		return;
 
@@ -146,9 +145,6 @@ timer_action(struct ehci_hcd *ehci, enum ehci_timer_action action)
 			if (!ehci->need_io_watchdog)
 				return;
 			t = EHCI_IO_JIFFIES;
-			break;
-		case TIMER_ASYNC_OFF:
-			t = EHCI_ASYNC_JIFFIES;
 			break;
 		/* case TIMER_ASYNC_SHRINK: */
 		default:
@@ -374,10 +370,6 @@ static void ehci_watchdog(unsigned long param)
 
 	spin_lock_irqsave(&ehci->lock, flags);
 
-	/* stop async processing after it's idled a bit */
-	if (test_bit (TIMER_ASYNC_OFF, &ehci->actions))
-		start_unlink_async (ehci, ehci->async);
-
 	/* ehci could run by timer, without IRQs ... */
 	ehci_work (ehci);
 
@@ -468,7 +460,8 @@ static void ehci_work (struct ehci_hcd *ehci)
 	if (ehci->scanning)
 		return;
 	ehci->scanning = 1;
-	scan_async (ehci);
+	if (ehci->async_count)
+		scan_async(ehci);
 	if (ehci->next_uframe != -1)
 		scan_periodic (ehci);
 	ehci->scanning = 0;
