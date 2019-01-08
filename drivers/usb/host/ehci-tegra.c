@@ -272,12 +272,11 @@ static int tegra_usb_suspend(struct usb_hcd *hcd)
 	struct ehci_regs __iomem *hw = tegra->ehci->regs;
 	unsigned long flags;
 
-	spin_lock_irqsave(&tegra->ehci->lock, flags);
-
-	tegra->port_speed = (readl(&hw->port_status[0]) >> 26) & 0x3;
 	ehci_halt(tegra->ehci);
-	clear_bit(HCD_FLAG_HW_ACCESSIBLE, &hcd->flags);
 
+	spin_lock_irqsave(&tegra->ehci->lock, flags);
+	tegra->port_speed = (readl(&hw->port_status[0]) >> 26) & 0x3;
+	clear_bit(HCD_FLAG_HW_ACCESSIBLE, &hcd->flags);
 	spin_unlock_irqrestore(&tegra->ehci->lock, flags);
 
 	tegra_ehci_power_down(hcd);

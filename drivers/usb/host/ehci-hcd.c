@@ -166,25 +166,32 @@ static int tdi_in_host_mode (struct ehci_hcd *ehci)
 	return (tmp & 3) == USBMODE_CM_HC;
 }
 
-/* force HC to halt state from unknown (EHCI spec section 2.3) */
+/*
+ * Force HC to halt state from unknown (EHCI spec section 2.3).
+ * Must be called with interrupts enabled and the lock not held.
+ */
 static int ehci_halt (struct ehci_hcd *ehci)
 {
-	u32	temp = ehci_readl(ehci, &ehci->regs->status);
+	u32	temp;
+
+	spin_lock_irq(&ehci->lock);
 
 	/* disable any irqs left enabled by previous code */
 	ehci_writel(ehci, 0, &ehci->regs->intr_enable);
 
-	if (ehci_is_TDI(ehci) && tdi_in_host_mode(ehci) == 0) {
+	if (ehci_is_TDI(ehci) && !tdi_in_host_mode(ehci)) {
+		spin_unlock_irq(&ehci->lock);
 		return 0;
 	}
-
-	if ((temp & STS_HALT) != 0)
-		return 0;
 
 	temp = ehci_readl(ehci, &ehci->regs->command);
 	temp &= ~CMD_RUN;
 	ehci_writel(ehci, temp, &ehci->regs->command);
-	return handshake (ehci, &ehci->regs->status,
+
+	spin_unlock_irq(&ehci->lock);
+	synchronize_irq(ehci_to_hcd(ehci)->irq);
+
+	return handshake(ehci, &ehci->regs->status,
 			  STS_HALT, STS_HALT, 16 * 125);
 }
 
@@ -206,7 +213,10 @@ static void tdi_reset (struct ehci_hcd *ehci)
 	ehci_writel(ehci, tmp, reg_ptr);
 }
 
-/* reset a non-running (STS_HALT == 1) controller */
+/*
+ * Reset a non-running (STS_HALT == 1) controller.
+ * Must be called with interrupts enabled and the lock not held.
+ */
 static int ehci_reset (struct ehci_hcd *ehci)
 {
 	int	retval;
@@ -243,7 +253,10 @@ static int ehci_reset (struct ehci_hcd *ehci)
 	return retval;
 }
 
-/* idle the controller (from running) */
+/*
+ * Idle the controller (turn off the schedules).
+ * Must be called with interrupts enabled and the lock not held.
+ */
 static void ehci_quiesce (struct ehci_hcd *ehci)
 {
 	u32	temp;
@@ -257,9 +270,11 @@ static void ehci_quiesce (struct ehci_hcd *ehci)
 	handshake(ehci, &ehci->regs->status, STS_ASS | STS_PSS, temp, 16 * 125);
 
 	/* then disable anything that's still active */
+	spin_lock_irq(&ehci->lock);
 	temp = ehci_readl(ehci, &ehci->regs->command);
 	temp &= ~(CMD_ASE | CMD_IAAD | CMD_PSE);
 	ehci_writel(ehci, temp, &ehci->regs->command);
+	spin_unlock_irq(&ehci->lock);
 	handshake(ehci, &ehci->regs->status, STS_ASS | STS_PSS, 0, 16 * 125);
 }
 
@@ -296,11 +311,14 @@ static void ehci_turn_off_all_ports(struct ehci_hcd *ehci)
 
 /*
  * Halt HC, turn off all ports, and let the BIOS use the companion controllers.
- * Should be called with ehci->lock held.
+ * Must be called with interrupts enabled and the lock not held.
  */
 static void ehci_silence_controller(struct ehci_hcd *ehci)
 {
 	ehci_halt(ehci);
+
+	spin_lock_irq(&ehci->lock);
+	ehci->rh_state = EHCI_RH_HALTED;
 	ehci_turn_off_all_ports(ehci);
 
 	/* make BIOS/etc use companion controller during reboot */
@@ -308,6 +326,7 @@ static void ehci_silence_controller(struct ehci_hcd *ehci)
 
 	/* unblock posted writes */
 	ehci_readl(ehci, &ehci->regs->configured_flag);
+	spin_unlock_irq(&ehci->lock);
 }
 
 /* ehci_shutdown kick in for silicon on any bus (not just pci, etc).
@@ -320,9 +339,10 @@ static void ehci_shutdown(struct usb_hcd *hcd)
 
 	spin_lock_irq(&ehci->lock);
 	ehci->rh_state = EHCI_RH_STOPPING;
-	ehci_silence_controller(ehci);
 	ehci->enabled_hrtimer_events = 0;
 	spin_unlock_irq(&ehci->lock);
+
+	ehci_silence_controller(ehci);
 
 	hrtimer_cancel(&ehci->hrtimer);
 }
@@ -395,11 +415,11 @@ static void ehci_stop (struct usb_hcd *hcd)
 
 	spin_lock_irq(&ehci->lock);
 	ehci->enabled_hrtimer_events = 0;
-	ehci_quiesce(ehci);
+	spin_unlock_irq(&ehci->lock);
 
+	ehci_quiesce(ehci);
 	ehci_silence_controller(ehci);
 	ehci_reset (ehci);
-	spin_unlock_irq(&ehci->lock);
 
 	hrtimer_cancel(&ehci->hrtimer);
 	remove_sysfs_files(ehci);
@@ -407,8 +427,6 @@ static void ehci_stop (struct usb_hcd *hcd)
 
 	/* root hub is shut down separately (first, when possible) */
 	spin_lock_irq (&ehci->lock);
-	if (ehci->async)
-		ehci_work (ehci);
 	end_free_itds(ehci);
 	spin_unlock_irq (&ehci->lock);
 	ehci_mem_cleanup (ehci);
