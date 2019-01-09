@@ -1112,7 +1112,7 @@ int ocfs2_setattr(struct dentry *dentry, struct iattr *attr)
 	handle_t *handle = NULL;
 	struct dquot *transfer_to[MAXQUOTAS] = { };
 	int qtype;
-	int had_lock;
+	int had_lock = 0;
 	struct ocfs2_lock_holder oh;
 
 	trace_ocfs2_setattr(inode, dentry,

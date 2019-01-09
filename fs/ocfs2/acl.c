@@ -146,7 +146,6 @@ static struct posix_acl *ocfs2_get_acl(struct inode *inode, int type)
 	struct ocfs2_super *osb = OCFS2_SB(inode->i_sb);
 	struct buffer_head *di_bh = NULL;
 	struct posix_acl *acl;
-	int ret;
 	int had_lock;
 	struct ocfs2_lock_holder oh;
 
