@@ -505,7 +505,7 @@ static enum hrtimer_restart posix_timer_fn(struct hrtimer *timer)
 			}
 #endif
 			timr->it_overrun += hrtimer_forward(timer, now,
-							    timr->it.real.interval);
+						timr->it.real.interval);
 			timr->__it_overrun = (unsigned int)timr->it_overrun;
 			ret = HRTIMER_RESTART;
 			++timr->it_requeue_pending;

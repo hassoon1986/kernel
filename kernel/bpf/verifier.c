@@ -587,11 +587,10 @@ static bool is_spillable_regtype(enum bpf_reg_type type)
  * stack boundary and alignment are checked in check_mem_access()
  */
 static int check_stack_write(struct verifier_env *env,
-			     struct verifier_state *state, int off, int size,
-			     int value_regno, int insn_idx)
+			     struct verifier_state *state, int off,
+			     int size, int value_regno, int insn_idx)
 {
-	int i;
-	int slot = -off - 1, spi = slot / BPF_REG_SIZE;
+	int i, spi = (MAX_BPF_STACK + off) / BPF_REG_SIZE;
 	/* caller checked that off % size == 0 and -MAX_BPF_STACK <= off < 0,
 	 * so it's aligned access and [off, off + size) are within stack limits
 	 */
@@ -606,8 +605,7 @@ static int check_stack_write(struct verifier_env *env,
 		}
 
 		/* save register state */
-		state->spilled_regs[(MAX_BPF_STACK + off) / BPF_REG_SIZE] =
-			state->regs[value_regno];
+		state->spilled_regs[spi] = state->regs[value_regno];
 
 		for (i = 0; i < BPF_REG_SIZE; i++) {
 			if (state->stack_slot_type[MAX_BPF_STACK + off + i] == STACK_MISC &&
@@ -637,8 +635,7 @@ static int check_stack_write(struct verifier_env *env,
 		}
 	} else {
 		/* regular write of data into stack */
-		state->spilled_regs[(MAX_BPF_STACK + off) / BPF_REG_SIZE] =
-			(struct reg_state) {};
+		state->spilled_regs[spi] = (struct reg_state) {};
 
 		for (i = 0; i < size; i++)
 			state->stack_slot_type[MAX_BPF_STACK + off + i] = STACK_MISC;
@@ -791,7 +788,8 @@ static int check_mem_access(struct verifier_env *env, int insn_idx, u32 regno, i
 				verbose("attempt to corrupt spilled pointer on stack\n");
 				return -EACCES;
 			}
-			err = check_stack_write(env, state, off, size, value_regno, insn_idx);
+			err = check_stack_write(env, state, off, size,
+						value_regno, insn_idx);
 		} else {
 			err = check_stack_read(state, off, size, value_regno);
 		}
@@ -1903,7 +1901,8 @@ static int do_check(struct verifier_env *env)
 			if (err)
 				return err;
 
-			if (BPF_SIZE(insn->code) != BPF_W) {
+			if (BPF_SIZE(insn->code) != BPF_W &&
+			    BPF_SIZE(insn->code) != BPF_DW) {
 				insn_idx++;
 				continue;
 			}
@@ -2279,9 +2278,11 @@ static int convert_ctx_accesses(struct verifier_env *env)
 	for (i = 0; i < insn_cnt; i++, insn++) {
 		u32 cnt;
 
-		if (insn->code == (BPF_LDX | BPF_MEM | BPF_W))
+		if (insn->code == (BPF_LDX | BPF_MEM | BPF_W) ||
+		    insn->code == (BPF_LDX | BPF_MEM | BPF_DW))
 			type = BPF_READ;
-		else if (insn->code == (BPF_STX | BPF_MEM | BPF_W))
+		else if (insn->code == (BPF_STX | BPF_MEM | BPF_W) ||
+			 insn->code == (BPF_STX | BPF_MEM | BPF_DW))
 			type = BPF_WRITE;
 		else
 			continue;

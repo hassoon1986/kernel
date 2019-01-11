@@ -492,15 +492,16 @@ static int amdgpu_ttm_tt_pin_userptr(struct ttm_tt *ttm)
 {
 	struct amdgpu_device *adev = amdgpu_get_adev(ttm->bdev);
 	struct amdgpu_ttm_tt *gtt = (void *)ttm;
-	enum dma_data_direction direction;
-	unsigned int flags = 0;
 	unsigned pinned = 0, nents;
 	int r;
 
-	if (!(gtt->userflags & AMDGPU_GEM_USERPTR_READONLY))
-		flags |= FOLL_WRITE;
+	int write = !(gtt->userflags & AMDGPU_GEM_USERPTR_READONLY);
+	unsigned int flags = 0;
+	enum dma_data_direction direction = write ?
+		DMA_BIDIRECTIONAL : DMA_TO_DEVICE;
 
-	direction = (flags & FOLL_WRITE) ? DMA_BIDIRECTIONAL : DMA_TO_DEVICE;
+	if (write)
+		flags |= FOLL_WRITE;
 
 	if (current->mm != gtt->usermm)
 		return -EPERM;
