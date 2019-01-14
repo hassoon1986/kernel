@@ -8325,7 +8325,7 @@ static int __init vmx_init(void)
 		r = vmx_setup_l1d_flush(vmentry_l1d_flush_param);
 		if (r) {
 			vmx_exit();
-			goto out8;
+			goto out7;
 		}
 	}
  
@@ -8375,8 +8375,6 @@ static int __init vmx_init(void)
 
 	return 0;
 
-out8:
-	vmx_cleanup_l1d_flush();
 out7:
 	free_page((unsigned long)vmx_vmwrite_bitmap);
 out6:
