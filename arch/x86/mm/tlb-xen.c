@@ -10,6 +10,7 @@
 #include <asm/tlbflush.h>
 #include <asm/mmu_context.h>
 #include <asm/cache.h>
+#include <asm/spec_ctrl.h>
 
 void switch_mm(struct mm_struct *prev, struct mm_struct *next,
 		struct task_struct *tsk)
@@ -33,6 +34,8 @@ void switch_mm_irqs_off(struct mm_struct *prev, struct mm_struct *next,
 	if (likely(prev != next)) {
 		BUG_ON(!xen_feature(XENFEAT_writable_page_tables) &&
 		       !PagePinned(virt_to_page(next->pgd)));
+
+		x86_ibp_barrier();
 
 #if defined(CONFIG_SMP) && !defined(CONFIG_XEN) /* XEN: no lazy tlb */
 		percpu_write(cpu_tlbstate.state, TLBSTATE_OK);
