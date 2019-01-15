@@ -2560,7 +2560,6 @@ scsi_device_set_state(struct scsi_device *sdev, enum scsi_device_state state)
 		case SDEV_QUIESCE:
 		case SDEV_OFFLINE:
 		case SDEV_TRANSPORT_OFFLINE:
-		case SDEV_BLOCK:
 			break;
 		default:
 			goto illegal;
@@ -2574,6 +2573,7 @@ scsi_device_set_state(struct scsi_device *sdev, enum scsi_device_state state)
 		case SDEV_OFFLINE:
 		case SDEV_TRANSPORT_OFFLINE:
 		case SDEV_CANCEL:
+		case SDEV_BLOCK:
 		case SDEV_CREATED_BLOCK:
 			break;
 		default:
@@ -2821,7 +2821,12 @@ static void scsi_wait_for_queuecommand(struct scsi_device *sdev)
 int
 scsi_device_quiesce(struct scsi_device *sdev)
 {
-	int err = scsi_device_set_state(sdev, SDEV_QUIESCE);
+	int err;
+
+	mutex_lock(&sdev->inquiry_mutex);
+	err = scsi_device_set_state(sdev, SDEV_QUIESCE);
+	mutex_unlock(&sdev->inquiry_mutex);
+
 	if (err)
 		return err;
 
@@ -2849,10 +2854,11 @@ void scsi_device_resume(struct scsi_device *sdev)
 	 * so assume the state is being managed elsewhere (for example
 	 * device deleted during suspend)
 	 */
-	if (sdev->sdev_state != SDEV_QUIESCE ||
-	    scsi_device_set_state(sdev, SDEV_RUNNING))
-		return;
-	scsi_run_queue(sdev->request_queue);
+	mutex_lock(&sdev->inquiry_mutex);
+	if (sdev->sdev_state == SDEV_QUIESCE &&
+	    scsi_device_set_state(sdev, SDEV_RUNNING) == 0)
+		scsi_run_queue(sdev->request_queue);
+	mutex_unlock(&sdev->inquiry_mutex);
 }
 EXPORT_SYMBOL(scsi_device_resume);
 
@@ -2883,28 +2889,20 @@ scsi_target_resume(struct scsi_target *starget)
 EXPORT_SYMBOL(scsi_target_resume);
 
 /**
- * scsi_internal_device_block - internal function to put a device temporarily into the SDEV_BLOCK state
- * @sdev:	device to block
- * @wait:	Whether or not to wait until ongoing .queuecommand() /
- *		.queue_rq() calls have finished.
+ * scsi_internal_device_block_nowait - try to transition to the SDEV_BLOCK state
+ * @sdev: device to block
  *
- * Block request made by scsi lld's to temporarily stop all
- * scsi commands on the specified device. May sleep.
+ * Pause SCSI command processing on the specified device. Does not sleep.
  *
- * Returns zero if successful or error if not
+ * Returns zero if successful or a negative error code upon failure.
  *
- * Notes:       
- *	This routine transitions the device to the SDEV_BLOCK state
- *	(which must be a legal transition).  When the device is in this
- *	state, all commands are deferred until the scsi lld reenables
- *	the device with scsi_device_unblock or device_block_tmo fires.
- *
- * To do: avoid that scsi_send_eh_cmnd() calls queuecommand() after
- * scsi_internal_device_block() has blocked a SCSI device and also
- * remove the rport mutex lock and unlock calls from srp_queuecommand().
+ * Notes:
+ * This routine transitions the device to the SDEV_BLOCK state (which must be
+ * a legal transition). When the device is in this state, command processing
+ * is paused until the device leaves the SDEV_BLOCK state. See also
+ * scsi_internal_device_unblock_nowait().
  */
-int
-scsi_internal_device_block(struct scsi_device *sdev, bool wait)
+int scsi_internal_device_block_nowait(struct scsi_device *sdev)
 {
 	struct request_queue *q = sdev->request_queue;
 	unsigned long flags;
@@ -2924,45 +2922,91 @@ scsi_internal_device_block(struct scsi_device *sdev, bool wait)
 	 * request queue. 
 	 */
 	if (q->mq_ops) {
-		if (wait)
-			blk_mq_quiesce_queue(q);
-		else
-			blk_mq_stop_hw_queues(q);
+		blk_mq_stop_hw_queues(q);
 	} else {
 		spin_lock_irqsave(q->queue_lock, flags);
 		blk_stop_queue(q);
 		spin_unlock_irqrestore(q->queue_lock, flags);
-		if (wait)
-			scsi_wait_for_queuecommand(sdev);
 	}
 
 	return 0;
 }
+EXPORT_SYMBOL_GPL(scsi_internal_device_block_nowait);
+
+/**
+ * scsi_internal_device_block - try to transition to the SDEV_BLOCK state
+ * @sdev:      device to block
+ * @wait:      Whether or not to wait until ongoing .queuecommand() /
+ *             .queue_rq() calls have finished.
+ *
+ * Pause SCSI command processing on the specified device and wait until all
+ * ongoing scsi_request_fn() / scsi_queue_rq() calls have finished. May sleep.
+ *
+ * Returns zero if successful or a negative error code upon failure.
+ *
+ * Note:
+ * This routine transitions the device to the SDEV_BLOCK state (which must be
+ * a legal transition). When the device is in this state, command processing
+ * is paused until the device leaves the SDEV_BLOCK state. See also
+ * scsi_internal_device_unblock().
+ *
+ * To do: avoid that scsi_send_eh_cmnd() calls queuecommand() after
+ * scsi_internal_device_block() has blocked a SCSI device and also
+ * remove the rport mutex lock and unlock calls from srp_queuecommand().
+ */
+static int scsi_internal_device_block(struct scsi_device *sdev, bool wait)
+{
+	struct request_queue *q = sdev->request_queue;
+	int err;
+
+	if (!wait)
+		return scsi_internal_device_block_nowait(sdev);
+	mutex_lock(&sdev->inquiry_mutex);
+	err = scsi_internal_device_block_nowait(sdev);
+	if (err == 0) {
+		if (q->mq_ops)
+			blk_mq_quiesce_queue(q);
+		else
+			scsi_wait_for_queuecommand(sdev);
+	}
+	mutex_unlock(&sdev->inquiry_mutex);
+
+	return err;
+}
 EXPORT_SYMBOL_GPL(scsi_internal_device_block);
  
-/**
- * scsi_internal_device_unblock - resume a device after a block request
- * @sdev:	device to resume
- * @new_state:	state to set devices to after unblocking
- *
- * Called by scsi lld's or the midlayer to restart the device queue
- * for the previously suspended scsi device.  Called from interrupt or
- * normal process context.
- *
- * Returns zero if successful or error if not.
- *
- * Notes:       
- *	This routine transitions the device to the SDEV_RUNNING state
- *	or to one of the offline states (which must be a legal transition)
- *	allowing the midlayer to goose the queue for this device.
- */
-int
-scsi_internal_device_unblock(struct scsi_device *sdev,
-			     enum scsi_device_state new_state)
+void scsi_start_queue(struct scsi_device *sdev)
 {
-	struct request_queue *q = sdev->request_queue; 
+	struct request_queue *q = sdev->request_queue;
 	unsigned long flags;
 
+	if (q->mq_ops) {
+		blk_mq_start_stopped_hw_queues(q, false);
+	} else {
+		spin_lock_irqsave(q->queue_lock, flags);
+		blk_start_queue(q);
+		spin_unlock_irqrestore(q->queue_lock, flags);
+	}
+}
+
+/**
+ * scsi_internal_device_unblock_nowait - resume a device after a block request
+ * @sdev:	device to resume
+ * @new_state:	state to set the device to after unblocking
+ *
+ * Restart the device queue for a previously suspended SCSI device. Does not
+ * sleep.
+ *
+ * Returns zero if successful or a negative error code upon failure.
+ *
+ * Notes:
+ * This routine transitions the device to the SDEV_RUNNING state or to one of
+ * the offline states (which must be a legal transition) allowing the midlayer
+ * to goose the queue for this device.
+ */
+int scsi_internal_device_unblock_nowait(struct scsi_device *sdev,
+					enum scsi_device_state new_state)
+{
 	/*
 	 * Try to transition the scsi device to SDEV_RUNNING or one of the
 	 * offlined states and goose the device queue if successful.
@@ -2980,15 +3024,36 @@ scsi_internal_device_unblock(struct scsi_device *sdev,
 		 sdev->sdev_state != SDEV_OFFLINE)
 		return -EINVAL;
 
-	if (q->mq_ops) {
-		blk_mq_start_stopped_hw_queues(q, false);
-	} else {
-		spin_lock_irqsave(q->queue_lock, flags);
-		blk_start_queue(q);
-		spin_unlock_irqrestore(q->queue_lock, flags);
-	}
+	scsi_start_queue(sdev);
 
 	return 0;
+}
+EXPORT_SYMBOL_GPL(scsi_internal_device_unblock_nowait);
+
+/**
+ * scsi_internal_device_unblock - resume a device after a block request
+ * @sdev:	device to resume
+ * @new_state:	state to set the device to after unblocking
+ *
+ * Restart the device queue for a previously suspended SCSI device. May sleep.
+ *
+ * Returns zero if successful or a negative error code upon failure.
+ *
+ * Notes:
+ * This routine transitions the device to the SDEV_RUNNING state or to one of
+ * the offline states (which must be a legal transition) allowing the midlayer
+ * to goose the queue for this device.
+ */
+static int scsi_internal_device_unblock(struct scsi_device *sdev,
+					enum scsi_device_state new_state)
+{
+	int ret;
+
+	mutex_lock(&sdev->inquiry_mutex);
+	ret = scsi_internal_device_unblock_nowait(sdev, new_state);
+	mutex_unlock(&sdev->inquiry_mutex);
+
+	return ret;
 }
 EXPORT_SYMBOL_GPL(scsi_internal_device_unblock);
 

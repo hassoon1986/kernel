@@ -1704,13 +1704,14 @@ static const struct block_device_operations sd_fops = {
 static int sd_eh_action(struct scsi_cmnd *scmd, int eh_disp)
 {
 	struct scsi_disk *sdkp = scsi_disk(scmd->request->rq_disk);
+	struct scsi_device *sdev = scmd->device;
 
 	if (eh_disp == SCSI_RETURN_NOT_HANDLED) {
 		/* New SCSI EH run, reset gate variable */
 		sdkp->ignore_medium_access_errors = false;
 		return eh_disp;
 	}
-	if (!scsi_device_online(scmd->device) ||
+	if (!scsi_device_online(sdev) ||
 	    !scsi_medium_access_command(scmd) ||
 	    host_byte(scmd->result) != DID_TIME_OUT ||
 	    eh_disp != SUCCESS)
@@ -1736,7 +1737,9 @@ static int sd_eh_action(struct scsi_cmnd *scmd, int eh_disp)
 	if (sdkp->medium_access_timed_out >= sdkp->max_medium_access_timeouts) {
 		scmd_printk(KERN_ERR, scmd,
 			    "Medium access timeout failure. Offlining disk!\n");
-		scsi_device_set_state(scmd->device, SDEV_OFFLINE);
+		mutex_lock(&sdev->inquiry_mutex);
+		scsi_device_set_state(sdev, SDEV_OFFLINE);
+		mutex_unlock(&sdev->inquiry_mutex);
 
 		return FAILED;
 	}

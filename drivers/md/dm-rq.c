@@ -498,7 +498,6 @@ static int setup_clone(struct request *clone, struct request *rq,
 	if (r)
 		return r;
 
-	clone->cmd_flags = rq->cmd_flags | REQ_NOMERGE;
 	clone->end_io = end_clone_request;
 	clone->end_io_data = tio;
 
@@ -525,7 +524,7 @@ static struct request *clone_old_rq(struct request *rq, struct mapped_device *md
 		free_old_clone_request(md, clone);
 		return NULL;
 	}
-
+	clone->cmd_flags = rq->cmd_flags | REQ_NOMERGE;
 	return clone;
 }
 
