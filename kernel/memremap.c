@@ -292,14 +292,11 @@ void *devm_memremap_pages(struct device *dev, struct resource *res,
 	unsigned long pfn;
 	int error, nid, i = 0;
 
-	if (is_ram == REGION_MIXED) {
-		WARN_ONCE(1, "%s attempted on mixed region %pr\n",
-				__func__, res);
+	if (is_ram != REGION_DISJOINT) {
+		WARN_ONCE(1, "%s attempted on %s region %pr\n", __func__,
+				is_ram == REGION_MIXED ? "mixed" : "ram", res);
 		return ERR_PTR(-ENXIO);
 	}
-
-	if (is_ram == REGION_INTERSECTS)
-		return __va(res->start);
 
 	if (altmap && !IS_ENABLED(CONFIG_SPARSEMEM_VMEMMAP)) {
 		dev_err(dev, "%s: altmap requires CONFIG_SPARSEMEM_VMEMMAP=y\n",
