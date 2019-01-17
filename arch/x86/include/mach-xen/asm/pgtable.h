@@ -364,7 +364,7 @@ static inline pmd_t pmd_modify(pmd_t pmd, pgprot_t newprot)
 
 	val &= _HPAGE_CHG_MASK;
 	val |= massage_pgprot(newprot) & ~_HPAGE_CHG_MASK;
-	val = flip_protnone_guard(oldval, val, PMD_PAGE_MASK);
+	val = flip_protnone_guard(oldval, val, PTE_PFN_MASK);
 	return __pmd(val);
 }
 #endif

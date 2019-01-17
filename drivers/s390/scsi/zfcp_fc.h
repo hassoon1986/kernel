@@ -291,6 +291,10 @@ void zfcp_fc_eval_fcp_rsp(struct fcp_resp_with_ext *fcp_rsp,
 		     !(rsp_flags & FCP_SNS_LEN_VAL) &&
 		     fcp_rsp->resp.fr_status == SAM_STAT_GOOD)
 			set_host_byte(scsi, DID_ERROR);
+	} else if (unlikely(rsp_flags & FCP_RESID_OVER)) {
+		/* FCP_DL was not sufficient for SCSI data length */
+		if (fcp_rsp->resp.fr_status == SAM_STAT_GOOD)
+			set_host_byte(scsi, DID_ERROR);
 	}
 }
 

@@ -71,7 +71,10 @@ extern void show_regs_common(void);
  * speculative execution to prevent attack.
  */
 #ifdef CONFIG_RETPOLINE
-#define __switch_fill_rsb __stringify(__FILL_RETURN_BUFFER(%%ebx, RSB_CLEAR_LOOPS, %%esp))
+#define __switch_fill_rsb \
+        ALTERNATIVE("jmp 10f\n\t" ASM_NOP3, ASM_NOP5, X86_FEATURE_RSB_CTXSW)	\
+	__stringify(__FILL_RETURN_BUFFER(%%ebx,RSB_CLEAR_LOOPS,%%esp)) "\n\t"	\
+	"10:\n"
 #else
 #define __switch_fill_rsb
 #endif
@@ -168,9 +171,15 @@ do {									\
  * with userspace addresses. On CPUs where those concerns
  * exist, overwrite the RSB with entries which capture
  * speculative execution to prevent attack.
+ *
+ * bp: use the old jmp labels and fix the padding so that
+ * the original insn is always >= replacement.
  */
 #ifdef CONFIG_RETPOLINE
-#define __switch_fill_rsb __stringify(__FILL_RETURN_BUFFER(%%rbx, RSB_CLEAR_LOOPS, %%rsp))
+#define __switch_fill_rsb \
+        ALTERNATIVE("jmp 1f\n\t" ASM_NOP3, ASM_NOP5, X86_FEATURE_RSB_CTXSW)	\
+	__stringify(__FILL_RETURN_BUFFER(%%rbx,RSB_CLEAR_LOOPS,%%rsp)) "\n\t"	\
+	"1:\n"
 #else
 #define __switch_fill_rsb
 #endif

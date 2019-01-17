@@ -438,11 +438,9 @@ static void	usa26_indat_callback(struct urb *urb)
 			/* no errors on individual bytes, only
 			   possible overrun err */
 			if (data[0] & RXERROR_OVERRUN)
-				err = TTY_OVERRUN;
-			else
-				err = 0;
+				tty_insert_flip_char(&port->port, 0, TTY_OVERRUN);
 			for (i = 1; i < urb->actual_length ; ++i)
-				tty_insert_flip_char(tty, data[i], err);
+				tty_insert_flip_char(tty, data[i], TTY_NORMAL);
 		} else {
 			/* some bytes had errors, every byte has status */
 			dbg("%s - RX error!!!!", __func__);
@@ -451,9 +449,9 @@ static void	usa26_indat_callback(struct urb *urb)
 				if (stat & RXERROR_OVERRUN)
 					flag |= TTY_OVERRUN;
 				if (stat & RXERROR_FRAMING)
-					flag |= TTY_FRAME;
-				if (stat & RXERROR_PARITY)
-					flag |= TTY_PARITY;
+					flag = TTY_FRAME;
+				else if (stat & RXERROR_PARITY)
+					flag = TTY_PARITY;
 				/* XXX should handle break (0x10) */
 				tty_insert_flip_char(tty, data[i+1], flag);
 			}
@@ -834,11 +832,11 @@ static void	usa49_indat_callback(struct urb *urb)
 			for (i = 0; i + 1 < urb->actual_length; i += 2) {
 				int stat = data[i], flag = 0;
 				if (stat & RXERROR_OVERRUN)
-					flag |= TTY_OVERRUN;
+					tty_insert_flip_char(&port->port, 0, TTY_OVERRUN);
 				if (stat & RXERROR_FRAMING)
-					flag |= TTY_FRAME;
-				if (stat & RXERROR_PARITY)
-					flag |= TTY_PARITY;
+					flag = TTY_FRAME;
+				else if (stat & RXERROR_PARITY)
+					flag = TTY_PARITY;
 				/* XXX should handle break (0x10) */
 				tty_insert_flip_char(tty, data[i+1], flag);
 			}
@@ -902,11 +900,11 @@ static void usa49wg_indat_callback(struct urb *urb)
 				for (x = 0; x + 1 < len; x += 2) {
 					int stat = data[i], flag = 0;
 					if (stat & RXERROR_OVERRUN)
-						flag |= TTY_OVERRUN;
+						tty_insert_flip_char(&port->port, 0, TTY_OVERRUN);
 					if (stat & RXERROR_FRAMING)
-						flag |= TTY_FRAME;
-					if (stat & RXERROR_PARITY)
-						flag |= TTY_PARITY;
+						flag = TTY_FRAME;
+					else if (stat & RXERROR_PARITY)
+						flag = TTY_PARITY;
 					/* XXX should handle break (0x10) */
 					tty_insert_flip_char(tty,
 							data[i+1], flag);
@@ -968,23 +966,21 @@ static void usa90_indat_callback(struct urb *urb)
 				/* no errors on individual bytes, only
 				   possible overrun err*/
 				if (data[0] & RXERROR_OVERRUN)
-					err = TTY_OVERRUN;
-				else
-					err = 0;
+					tty_insert_flip_char(&port->port, 0, TTY_OVERRUN);
 				for (i = 1; i < urb->actual_length ; ++i)
 					tty_insert_flip_char(tty, data[i],
-									err);
+									TTY_NORMAL);
 			}  else {
 			/* some bytes had errors, every byte has status */
 				dbg("%s - RX error!!!!", __func__);
 				for (i = 0; i + 1 < urb->actual_length; i += 2) {
 					int stat = data[i], flag = 0;
 					if (stat & RXERROR_OVERRUN)
-						flag |= TTY_OVERRUN;
+						tty_insert_flip_char(&port->port, 0, TTY_OVERRUN);
 					if (stat & RXERROR_FRAMING)
-						flag |= TTY_FRAME;
-					if (stat & RXERROR_PARITY)
-						flag |= TTY_PARITY;
+						flag = TTY_FRAME;
+					else if (stat & RXERROR_PARITY)
+						flag = TTY_PARITY;
 					/* XXX should handle break (0x10) */
 					tty_insert_flip_char(tty, data[i+1],
 									flag);
