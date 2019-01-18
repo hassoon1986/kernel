@@ -431,10 +431,10 @@ found:
 	 *
 	 * We do the same here for IPv4.
 	 */
+
 	/* Is there an overlap with the previous fragment? */
 	err = -EINVAL;
-	if (prev &&
-	    (FRAG_CB(prev)->offset + prev->len) > offset)
+	if (prev && (FRAG_CB(prev)->offset + prev->len) > offset)
 		goto overlap;
 
 	/* Is there an overlap with the next fragment? */
@@ -493,7 +493,7 @@ found:
 	return -EINPROGRESS;
 
 overlap:
-	IP_INC_STATS(net, IPSTATS_MIB_REASMFAILS);
+	IP_INC_STATS_BH(net, IPSTATS_MIB_REASMFAILS);
 discard_qp:
 	inet_frag_kill(&qp->q, &ip4_frags);
 err:
