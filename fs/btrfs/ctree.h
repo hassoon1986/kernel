@@ -36,6 +36,7 @@
 #include <linux/btrfs_tree.h>
 #include <linux/workqueue.h>
 #include <linux/security.h>
+#include <linux/sizes.h>
 #include <linux/dynamic_debug.h>
 #include <linux/unsupported-feature.h>
 #include "extent_io.h"
