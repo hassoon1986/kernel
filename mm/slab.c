@@ -259,6 +259,8 @@ static void kmem_cache_node_init(struct kmem_cache_node *parent)
 	INIT_LIST_HEAD(&parent->slabs_full);
 	INIT_LIST_HEAD(&parent->slabs_partial);
 	INIT_LIST_HEAD(&parent->slabs_free);
+	parent->total_slabs = 0;
+	parent->free_slabs = 0;
 	parent->shared = NULL;
 	parent->alien = NULL;
 	parent->colour_next = 0;
@@ -1526,7 +1528,6 @@ slab_out_of_memory(struct kmem_cache *cachep, gfp_t gfpflags, int nodeid)
 {
 #if DEBUG
 	struct kmem_cache_node *n;
-	struct page *page;
 	unsigned long flags;
 	int node;
 	static DEFINE_RATELIMIT_STATE(slab_oom_rs, DEFAULT_RATELIMIT_INTERVAL,
@@ -1541,29 +1542,18 @@ slab_out_of_memory(struct kmem_cache *cachep, gfp_t gfpflags, int nodeid)
 		cachep->name, cachep->size, cachep->gfporder);
 
 	for_each_kmem_cache_node(cachep, node, n) {
-		unsigned long active_objs = 0, num_objs = 0, free_objects = 0;
-		unsigned long active_slabs = 0, num_slabs = 0;
+		unsigned long total_slabs, free_slabs, free_objs;
 
 		spin_lock_irqsave(&n->list_lock, flags);
-		list_for_each_entry(page, &n->slabs_full, lru) {
-			active_objs += cachep->num;
-			active_slabs++;
-		}
-		list_for_each_entry(page, &n->slabs_partial, lru) {
-			active_objs += page->active;
-			active_slabs++;
-		}
-		list_for_each_entry(page, &n->slabs_free, lru)
-			num_slabs++;
-
-		free_objects += n->free_objects;
+		total_slabs = n->total_slabs;
+		free_slabs = n->free_slabs;
+		free_objs = n->free_objects;
 		spin_unlock_irqrestore(&n->list_lock, flags);
 
-		num_slabs += active_slabs;
-		num_objs = num_slabs * cachep->num;
-		pr_warn("  node %d: slabs: %ld/%ld, objs: %ld/%ld, free: %ld\n",
-			node, active_slabs, num_slabs, active_objs, num_objs,
-			free_objects);
+		pr_warn("  node %d: slabs: %ld/%ld, objs: %ld/%ld\n",
+			node, total_slabs - free_slabs, total_slabs,
+			(total_slabs * cachep->num) - free_objs,
+			total_slabs * cachep->num);
 	}
 #endif
 }
@@ -2374,6 +2364,8 @@ static int drain_freelist(struct kmem_cache *cache,
 		BUG_ON(page->active);
 #endif
 		list_del(&page->lru);
+		n->free_slabs--;
+		n->total_slabs--;
 		/*
 		 * Safe to drop the lock. The slab is no longer linked
 		 * to the cache.
@@ -2652,6 +2644,8 @@ static int cache_grow(struct kmem_cache *cachep,
 
 	/* Make slab active. */
 	list_add_tail(&page->lru, &(n->slabs_free));
+	n->free_slabs++;
+	n->total_slabs++;
 	STATS_INC_GROWN(cachep);
 	n->free_objects += cachep->num;
 	spin_unlock(&n->list_lock);
@@ -2793,6 +2787,8 @@ retry:
 			entry = n->slabs_free.next;
 			if (entry == &n->slabs_free)
 				goto must_grow;
+			else
+				n->free_slabs--;
 		}
 
 		page = list_entry(entry, struct page, lru);
@@ -3097,6 +3093,8 @@ retry:
 		entry = n->slabs_free.next;
 		if (entry == &n->slabs_free)
 			goto must_grow;
+		else
+			n->free_slabs--;
 	}
 
 	page = list_entry(entry, struct page, lru);
@@ -3286,8 +3284,10 @@ static void free_block(struct kmem_cache *cachep, void **objpp,
 			if (n->free_objects > n->free_limit) {
 				n->free_objects -= cachep->num;
 				list_add_tail(&page->lru, list);
+				n->total_slabs--;
 			} else {
 				list_add(&page->lru, &n->slabs_free);
+				n->free_slabs++;
 			}
 		} else {
 			/* Unconditionally move a slab to the end of the
@@ -3915,61 +3915,34 @@ out:
 #ifdef CONFIG_SLABINFO
 void get_slabinfo(struct kmem_cache *cachep, struct slabinfo *sinfo)
 {
-	struct page *page;
-	unsigned long active_objs;
-	unsigned long num_objs;
-	unsigned long active_slabs = 0;
-	unsigned long num_slabs, free_objects = 0, shared_avail = 0;
-	const char *name;
-	char *error = NULL;
+	unsigned long active_objs, num_objs, active_slabs;
+	unsigned long total_slabs = 0, free_objs = 0, shared_avail = 0;
+	unsigned long free_slabs = 0;
 	int node;
 	struct kmem_cache_node *n;
 
-	active_objs = 0;
-	num_slabs = 0;
 	for_each_kmem_cache_node(cachep, node, n) {
-
 		check_irq_on();
 		spin_lock_irq(&n->list_lock);
 
-		list_for_each_entry(page, &n->slabs_full, lru) {
-			if (page->active != cachep->num && !error)
-				error = "slabs_full accounting error";
-			active_objs += cachep->num;
-			active_slabs++;
-		}
-		list_for_each_entry(page, &n->slabs_partial, lru) {
-			if (page->active == cachep->num && !error)
-				error = "slabs_partial accounting error";
-			if (!page->active && !error)
-				error = "slabs_partial accounting error";
-			active_objs += page->active;
-			active_slabs++;
-		}
-		list_for_each_entry(page, &n->slabs_free, lru) {
-			if (page->active && !error)
-				error = "slabs_free accounting error";
-			num_slabs++;
-		}
-		free_objects += n->free_objects;
+		total_slabs += n->total_slabs;
+		free_slabs += n->free_slabs;
+		free_objs += n->free_objects;
+
 		if (n->shared)
 			shared_avail += n->shared->avail;
 
 		spin_unlock_irq(&n->list_lock);
 	}
-	num_slabs += active_slabs;
-	num_objs = num_slabs * cachep->num;
-	if (num_objs - active_objs != free_objects && !error)
-		error = "free_objects accounting error";
+	num_objs = total_slabs * cachep->num;
+	active_slabs = total_slabs - free_slabs;
 
-	name = cachep->name;
-	if (error)
-		printk(KERN_ERR "slab: cache %s error: %s\n", name, error);
+	active_objs = num_objs - free_objs;
 
 	sinfo->active_objs = active_objs;
 	sinfo->num_objs = num_objs;
 	sinfo->active_slabs = active_slabs;
-	sinfo->num_slabs = num_slabs;
+	sinfo->num_slabs = total_slabs;
 	sinfo->shared_avail = shared_avail;
 	sinfo->limit = cachep->limit;
 	sinfo->batchcount = cachep->batchcount;
