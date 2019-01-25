@@ -462,6 +462,9 @@ struct mddev {
 	struct bio_set			*sync_set; /* for sync operations like
 						   * metadata and bitmap writes
 						   */
+	ktime_t start_flush, last_flush; /* last_flush is when the last completed
+					  * flush was started.
+					  */
 #endif
 };
 
