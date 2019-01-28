@@ -395,6 +395,7 @@ struct fscache_object {
 #define FSCACHE_OBJECT_IS_LIVE		3	/* T if object is not withdrawn or relinquished */
 #define FSCACHE_OBJECT_IS_LOOKED_UP	4	/* T if object has been looked up */
 #define FSCACHE_OBJECT_IS_AVAILABLE	5	/* T if object has become active */
+#define FSCACHE_OBJECT_RUN_AFTER_DEAD	8	/* T if object has been dispatched after death */
 
 	struct list_head	cache_link;	/* link in cache->object_list */
 	struct hlist_node	cookie_link;	/* link in cookie->backing_objects */
@@ -434,17 +435,22 @@ static inline bool fscache_object_is_available(struct fscache_object *object)
 	return test_bit(FSCACHE_OBJECT_IS_AVAILABLE, &object->flags);
 }
 
+static inline bool fscache_cache_is_broken(struct fscache_object *object)
+{
+	return test_bit(FSCACHE_IOERROR, &object->cache->flags);
+}
+
 static inline bool fscache_object_is_active(struct fscache_object *object)
 {
 	return fscache_object_is_available(object) &&
 		fscache_object_is_live(object) &&
-		!test_bit(FSCACHE_IOERROR, &object->cache->flags);
+		!fscache_cache_is_broken(object);
 }
 
 static inline bool fscache_object_is_dead(struct fscache_object *object)
 {
 	return fscache_object_is_dying(object) &&
-		test_bit(FSCACHE_IOERROR, &object->cache->flags);
+		fscache_cache_is_broken(object);
 }
 
 /**

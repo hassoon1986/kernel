@@ -161,6 +161,9 @@ struct nfs_server {
 	u32			mountd_version;
 	unsigned short		mountd_port;
 	unsigned short		mountd_protocol;
+#ifndef __GENKSYMS__
+	struct list_head	state_owners_lru;
+#endif
 };
 
 /* Server capabilities */

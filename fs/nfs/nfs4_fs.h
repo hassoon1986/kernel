@@ -129,6 +129,10 @@ struct nfs4_state_owner {
 	struct rpc_sequence  so_sequence;
 	seqcount_t	     so_reclaim_seqcount;
 	struct mutex	     so_delegreturn_mutex;
+#ifndef __GENKSYMS__
+	struct list_head     so_lru;
+	unsigned long        so_expires;
+#endif
 };
 
 enum {
@@ -365,6 +369,7 @@ static inline void nfs4_schedule_session_recovery(struct nfs4_session *session)
 
 extern struct nfs4_state_owner * nfs4_get_state_owner(struct nfs_server *, struct rpc_cred *);
 extern void nfs4_put_state_owner(struct nfs4_state_owner *);
+extern void nfs4_purge_state_owners(struct nfs_server *);
 extern struct nfs4_state * nfs4_get_open_state(struct inode *, struct nfs4_state_owner *);
 extern void nfs4_put_open_state(struct nfs4_state *);
 extern void nfs4_close_state(struct path *, struct nfs4_state *, fmode_t);
