@@ -1623,6 +1623,9 @@ void dm_table_set_restrictions(struct dm_table *t, struct request_queue *q,
 	if (blk_queue_add_random(q) && dm_table_all_devices_attribute(t, device_is_not_random))
 		queue_flag_clear_unlocked(QUEUE_FLAG_ADD_RANDOM, q);
 
+	/* Allow reads to exceed readahead limits */
+	q->backing_dev_info->io_pages = limits->max_sectors >> (PAGE_SHIFT - 9);
+
 	/*
 	 * QUEUE_FLAG_STACKABLE must be set after all queue settings are
 	 * visible to other CPUs because, once the flag is set, incoming bios
