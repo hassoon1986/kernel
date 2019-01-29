@@ -1487,7 +1487,7 @@ stayinbootmode:
 	dbg("%s - STAYING IN BOOT MODE", __func__);
 	serial->product_info.TiMode = TI_MODE_BOOT;
 
-	return 0;
+	return 1;
 }
 
 
@@ -2649,11 +2649,13 @@ static int edge_startup(struct usb_serial *serial)
 	usb_set_serial_data(serial, edge_serial);
 
 	status = download_fw(edge_serial);
-	if (status) {
+	if (status < 0) {
 		kfree(edge_serial);
 		return status;
 	}
 
+	if (status > 0)
+		return 1;	/* bind but do not register any ports */
 	/* set up our port private structures */
 	for (i = 0; i < serial->num_ports; ++i) {
 		edge_port = kzalloc(sizeof(struct edgeport_port), GFP_KERNEL);
