@@ -463,6 +463,13 @@ static int ti_startup(struct usb_serial *serial)
 		tport->tp_uart_mode = 0;	/* default is RS232 */
 	}
 
+	if (serial->num_bulk_in < serial->num_ports ||
+			serial->num_bulk_out < serial->num_ports) {
+		dev_err(&serial->interface->dev, "missing endpoints\n");
+		status = -ENODEV;
+		goto free_tdev;
+	}
+
 	return 0;
 
 free_tports:
