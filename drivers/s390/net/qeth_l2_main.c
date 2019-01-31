@@ -128,20 +128,18 @@ static int qeth_l2_send_setgroupmac_cb(struct qeth_card *card,
 				unsigned long data)
 {
 	struct qeth_ipa_cmd *cmd;
-	__u8 *mac;
 
 	QETH_CARD_TEXT(card, 2, "L2Sgmacb");
 	cmd = (struct qeth_ipa_cmd *) data;
-	mac = &cmd->data.setdelmac.mac[0];
 	/* MAC already registered, needed in couple/uncouple case */
 	if (cmd->hdr.return_code ==  IPA_RC_L2_DUP_MAC) {
-		QETH_DBF_MESSAGE(2, "Group MAC %pM already existing on %s \n",
-			  mac, QETH_CARD_IFNAME(card));
+		QETH_DBF_MESSAGE(2, "Group MAC already existing on device %x\n",
+				 CARD_DEVID(card));
 		cmd->hdr.return_code = 0;
 	}
 	if (cmd->hdr.return_code)
-		QETH_DBF_MESSAGE(2, "Could not set group MAC %pM on %s: %x\n",
-			  mac, QETH_CARD_IFNAME(card), cmd->hdr.return_code);
+		QETH_DBF_MESSAGE(2, "Could not set group MAC on device %x: %x\n",
+				 CARD_DEVID(card), cmd->hdr.return_code);
 	return 0;
 }
 
@@ -157,14 +155,12 @@ static int qeth_l2_send_delgroupmac_cb(struct qeth_card *card,
 				unsigned long data)
 {
 	struct qeth_ipa_cmd *cmd;
-	__u8 *mac;
 
 	QETH_CARD_TEXT(card, 2, "L2Dgmacb");
 	cmd = (struct qeth_ipa_cmd *) data;
-	mac = &cmd->data.setdelmac.mac[0];
 	if (cmd->hdr.return_code)
-		QETH_DBF_MESSAGE(2, "Could not delete group MAC %pM on %s: %x\n",
-			  mac, QETH_CARD_IFNAME(card), cmd->hdr.return_code);
+		QETH_DBF_MESSAGE(2, "Could not delete group MAC on device %x: %x\n",
+				 CARD_DEVID(card), cmd->hdr.return_code);
 	return 0;
 }
 
@@ -267,9 +263,9 @@ static int qeth_l2_send_setdelvlan_cb(struct qeth_card *card,
 	QETH_CARD_TEXT(card, 2, "L2sdvcb");
 	cmd = (struct qeth_ipa_cmd *) data;
 	if (cmd->hdr.return_code) {
-		QETH_DBF_MESSAGE(2, "Error in processing VLAN %i on %s: 0x%x. "
-			  "Continuing\n", cmd->data.setdelvlan.vlan_id,
-			  QETH_CARD_IFNAME(card), cmd->hdr.return_code);
+		QETH_DBF_MESSAGE(2, "Error in processing VLAN %u on device %x: %#x.\n",
+				 cmd->data.setdelvlan.vlan_id,
+				 CARD_DEVID(card), cmd->hdr.return_code);
 		QETH_CARD_TEXT_(card, 2, "L2VL%4x", cmd->hdr.command);
 		QETH_CARD_TEXT_(card, 2, "err%d", cmd->hdr.return_code);
 	}
@@ -630,9 +626,8 @@ static int qeth_l2_request_initial_mac(struct qeth_card *card)
 	if (qeth_is_supported(card, IPA_SETADAPTERPARMS)) {
 		rc = qeth_query_setadapterparms(card);
 		if (rc) {
-			QETH_DBF_MESSAGE(2, "could not query adapter "
-				"parameters on device %s: x%x\n",
-				CARD_BUS_ID(card), rc);
+			QETH_DBF_MESSAGE(2, "could not query adapter parameters on device %x: x%x\n",
+					 CARD_DEVID(card), rc);
 		}
 	}
 
@@ -642,8 +637,8 @@ static int qeth_l2_request_initial_mac(struct qeth_card *card)
 	    card->info.guestlan) {
 		rc = qeth_setadpparms_change_macaddr(card);
 		if (rc) {
-			QETH_DBF_MESSAGE(2, "couldn't get MAC address on "
-				"device %s: x%x\n", CARD_BUS_ID(card), rc);
+			QETH_DBF_MESSAGE(2, "READ_MAC Assist failed on device %x: %#x\n",
+					 CARD_DEVID(card), rc);
 			QETH_DBF_TEXT_(SETUP, 2, "1err%d", rc);
 			return rc;
 		}
