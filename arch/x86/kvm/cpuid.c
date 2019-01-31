@@ -66,14 +66,6 @@ u64 kvm_supported_xcr0(void)
 
 #define F(x) bit(X86_FEATURE_##x)
 
-/* These are scattered features in cpufeatures.h. */
-#define KVM_CPUID_BIT_AVX512_4VNNIW     2
-#define KVM_CPUID_BIT_AVX512_4FMAPS     3
-#define KVM_CPUID_BIT_SPEC_CTRL		26
-#define KVM_CPUID_BIT_ARCH_CAPABILITIES	29
-#define KVM_CPUID_BIT_SPEC_CTRL_SSBD	31
-#define KF(x) bit(KVM_CPUID_BIT_##x)
-
 int kvm_update_cpuid(struct kvm_vcpu *vcpu)
 {
 	struct kvm_cpuid_entry2 *best;

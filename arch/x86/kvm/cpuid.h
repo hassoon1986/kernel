@@ -3,6 +3,14 @@
 
 #include "x86.h"
 
+/* These are scattered features in cpufeatures.h. */
+#define KVM_CPUID_BIT_AVX512_4VNNIW     2
+#define KVM_CPUID_BIT_AVX512_4FMAPS     3
+#define KVM_CPUID_BIT_SPEC_CTRL		26
+#define KVM_CPUID_BIT_ARCH_CAPABILITIES	29
+#define KVM_CPUID_BIT_SPEC_CTRL_SSBD	31
+#define KF(x) bit(KVM_CPUID_BIT_##x)
+
 int kvm_update_cpuid(struct kvm_vcpu *vcpu);
 bool kvm_mpx_supported(void);
 struct kvm_cpuid_entry2 *kvm_find_cpuid_entry(struct kvm_vcpu *vcpu,
@@ -175,7 +183,7 @@ static inline bool guest_cpuid_has_ibpb(struct kvm_vcpu *vcpu)
 	if (best && (best->ebx & bit(X86_FEATURE_AMD_IBPB)))
 		return true;
 	best = kvm_find_cpuid_entry(vcpu, 7, 0);
-	return best && (best->edx & bit(X86_FEATURE_SPEC_CTRL));
+	return best && (best->edx & bit(KVM_CPUID_BIT_SPEC_CTRL));
 }
 
 static inline bool guest_cpuid_has_spec_ctrl(struct kvm_vcpu *vcpu)
@@ -186,7 +194,7 @@ static inline bool guest_cpuid_has_spec_ctrl(struct kvm_vcpu *vcpu)
 	if (best && (best->ebx & bit(X86_FEATURE_AMD_IBRS)))
 		return true;
 	best = kvm_find_cpuid_entry(vcpu, 7, 0);
-	return best && (best->edx & (bit(X86_FEATURE_SPEC_CTRL) | bit(X86_FEATURE_SPEC_CTRL_SSBD)));
+	return best && (best->edx & (bit(KVM_CPUID_BIT_SPEC_CTRL) | bit(KVM_CPUID_BIT_SPEC_CTRL_SSBD)));
 }
 
 static inline bool guest_cpuid_has_arch_capabilities(struct kvm_vcpu *vcpu)

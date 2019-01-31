@@ -296,8 +296,7 @@ static void set_node_addr(struct f2fs_sb_info *sbi, struct node_info *ni,
 			new_blkaddr == NULL_ADDR);
 	f2fs_bug_on(sbi, nat_get_blkaddr(e) == NEW_ADDR &&
 			new_blkaddr == NEW_ADDR);
-	f2fs_bug_on(sbi, nat_get_blkaddr(e) != NEW_ADDR &&
-			nat_get_blkaddr(e) != NULL_ADDR &&
+	f2fs_bug_on(sbi, is_valid_data_blkaddr(sbi, nat_get_blkaddr(e)) &&
 			new_blkaddr == NEW_ADDR);
 
 	/* increment version no as node is removed */
@@ -312,7 +311,7 @@ static void set_node_addr(struct f2fs_sb_info *sbi, struct node_info *ni,
 
 	/* change address */
 	nat_set_blkaddr(e, new_blkaddr);
-	if (new_blkaddr == NEW_ADDR || new_blkaddr == NULL_ADDR)
+	if (!is_valid_data_blkaddr(sbi, new_blkaddr))
 		set_nat_flag(e, IS_CHECKPOINTED, false);
 	__set_nat_cache_dirty(nm_i, e);
 
@@ -1344,6 +1343,12 @@ static int f2fs_write_node_page(struct page *page,
 		return 0;
 	}
 
+	if (__is_valid_data_blkaddr(ni.blk_addr) &&
+		!f2fs_is_valid_blkaddr(sbi, ni.blk_addr, DATA_GENERIC)) {
+		up_read(&sbi->node_write);
+		goto redirty_out;
+	}
+
 	set_page_writeback(page);
 	fio.blk_addr = ni.blk_addr;
 	write_node_page(nid, &fio);
@@ -1456,8 +1461,7 @@ static int add_free_nid(struct f2fs_sb_info *sbi, nid_t nid, bool build)
 	struct f2fs_nm_info *nm_i = NM_I(sbi);
 	struct free_nid *i, *e;
 	struct nat_entry *ne;
-	int err;
-	int ret = 0;
+	int err = -EINVAL;
 
 	if (!available_free_memory(sbi, FREE_NIDS))
 		return -1;
@@ -1476,19 +1480,36 @@ static int add_free_nid(struct f2fs_sb_info *sbi, nid_t nid, bool build)
 	spin_lock(&nm_i->nid_list_lock);
 
 	if (build) {
+		/*
+		 *   Thread A             Thread B
+		 *  - f2fs_create
+		 *   - f2fs_new_inode
+		 *    - alloc_nid
+		 *     - __insert_nid_to_list(ALLOC_NID_LIST)
+		 *                     - f2fs_balance_fs_bg
+		 *                      - build_free_nids
+		 *                       - __build_free_nids
+		 *                        - scan_nat_page
+		 *                         - add_free_nid
+		 *                          - __lookup_nat_cache
+		 *  - f2fs_add_link
+		 *   - init_inode_metadata
+		 *    - new_inode_page
+		 *     - new_node_page
+		 *      - set_node_addr
+		 *  - alloc_nid_done
+		 *   - __remove_nid_from_list(ALLOC_NID_LIST)
+		 *                         - __insert_nid_to_list(FREE_NID_LIST)
+		 */
 		ne = __lookup_nat_cache(nm_i, nid);
 		if (ne && (!get_nat_flag(ne, IS_CHECKPOINTED) ||
 				nat_get_blkaddr(ne) != NULL_ADDR))
 			goto err_out;
 
 		e = __lookup_free_nid_list(nm_i, nid);
-		if (e) {
-			if (e->state == NID_NEW)
-				ret = true;
+		if (e)
 			goto err_out;
-		}
 	}
-	ret = 1;
 	err = __insert_nid_to_list(sbi, i, FREE_NID_LIST, true);
 err_out:
 	spin_unlock(&nm_i->nid_list_lock);
@@ -1496,8 +1517,7 @@ err_out:
 err:
 	if (err)
 		kmem_cache_free(free_nid_slab, i);
-
-	return ret;
+	return !err;
 }
 
 static void remove_free_nid(struct f2fs_sb_info *sbi, nid_t nid)
