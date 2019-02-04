@@ -234,11 +234,6 @@ static int ch341_configure(struct usb_device *dev, struct ch341_private *priv)
 	if (r < 0)
 		goto out;
 
-	/* expect 0xff 0xee */
-	r = ch341_get_status(dev, priv);
-	if (r < 0)
-		goto out;
-
 	r = ch341_control_out(dev, 0xa1, 0x501f, 0xd90a);
 	if (r < 0)
 		goto out;
@@ -248,11 +243,6 @@ static int ch341_configure(struct usb_device *dev, struct ch341_private *priv)
 		goto out;
 
 	r = ch341_set_handshake(dev, priv->line_control);
-	if (r < 0)
-		goto out;
-
-	/* expect 0x9f 0xee */
-	r = ch341_get_status(dev, priv);
 
 out:	kfree(buffer);
 	return r;
@@ -331,10 +321,6 @@ static int ch341_open(struct tty_struct *tty, struct usb_serial_port *port)
 
 	priv->baud_rate = DEFAULT_BAUD_RATE;
 
-	r = ch341_configure(serial->dev, priv);
-	if (r)
-		return r;
-
 	r = ch341_set_handshake(serial->dev, priv->line_control);
 	if (r)
 		return r;
@@ -351,6 +337,12 @@ static int ch341_open(struct tty_struct *tty, struct usb_serial_port *port)
 			" error %d\n", __func__, r);
 		ch341_close(port);
 		return -EPROTO;
+	}
+
+	r = ch341_get_status(port->serial->dev, priv);
+	if (r < 0) {
+		dev_err(&port->dev, "failed to read modem status: %d\n", r);
+		goto err_kill_interrupt_urb;
 	}
 
 	r = usb_serial_generic_open(tty, port);
@@ -637,6 +629,12 @@ static int ch341_reset_resume(struct usb_interface *intf)
 		ret = usb_submit_urb(port->interrupt_in_urb, GFP_NOIO);
 		if (ret) {
 			return ret;
+		}
+
+		ret = ch341_get_status(port->serial->dev, priv);
+		if (ret < 0) {
+			dev_err(&port->dev, "failed to read modem status: %d\n",
+				ret);
 		}
 	}
 
