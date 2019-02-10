@@ -169,6 +169,11 @@ bool is_nd_blk(struct device *dev)
 	return dev ? dev->type == &nd_blk_device_type : false;
 }
 
+bool is_nd_volatile(struct device *dev)
+{
+	return dev ? dev->type == &nd_volatile_device_type : false;
+}
+
 struct nd_region *to_nd_region(struct device *dev)
 {
 	struct nd_region *nd_region = container_of(dev, struct nd_region, dev);
@@ -317,6 +322,31 @@ resource_size_t nd_region_available_dpa(struct nd_region *nd_region)
 			available += nd_blk_available_dpa(nd_region);
 	}
 
+	return available;
+}
+
+resource_size_t nd_region_allocatable_dpa(struct nd_region *nd_region)
+{
+	resource_size_t available = 0;
+	int i;
+
+	if (is_nd_pmem(&nd_region->dev) || is_nd_volatile(&nd_region->dev))
+		available = ~(phys_addr_t)0;
+
+	WARN_ON(!is_nvdimm_bus_locked(&nd_region->dev));
+	for (i = 0; i < nd_region->ndr_mappings; i++) {
+		struct nd_mapping *nd_mapping = &nd_region->mapping[i];
+
+		if (is_nd_pmem(&nd_region->dev) ||
+		    is_nd_volatile(&nd_region->dev))
+			available = min(available,
+					nd_pmem_max_contiguous_dpa(nd_region,
+								   nd_mapping));
+		else if (is_nd_blk(&nd_region->dev))
+			available += nd_blk_available_dpa(nd_region);
+	}
+	if (is_nd_pmem(&nd_region->dev) || is_nd_volatile(&nd_region->dev))
+		return available * nd_region->ndr_mappings;
 	return available;
 }
 
@@ -990,6 +1020,47 @@ int nvdimm_has_flush(struct nd_region *nd_region)
 	return 0;
 }
 EXPORT_SYMBOL_GPL(nvdimm_has_flush);
+
+struct conflict_context {
+	struct nd_region *nd_region;
+	resource_size_t start, size;
+};
+
+static int region_conflict(struct device *dev, void *data)
+{
+	struct nd_region *nd_region;
+	struct conflict_context *ctx = data;
+	resource_size_t res_end, region_end, region_start;
+
+	if (!(is_nd_pmem(dev) || is_nd_volatile(dev)))
+		return 0;
+
+	nd_region = to_nd_region(dev);
+	if (nd_region == ctx->nd_region)
+		return 0;
+
+	res_end = ctx->start + ctx->size;
+	region_start = nd_region->ndr_start;
+	region_end = region_start + nd_region->ndr_size;
+	if (ctx->start >= region_start && ctx->start < region_end)
+		return -EBUSY;
+	if (res_end > region_start && res_end <= region_end)
+		return -EBUSY;
+	return 0;
+}
+
+int nd_region_conflict(struct nd_region *nd_region, resource_size_t start,
+		resource_size_t size)
+{
+	struct nvdimm_bus *nvdimm_bus = walk_to_nvdimm_bus(&nd_region->dev);
+	struct conflict_context ctx = {
+		.nd_region = nd_region,
+		.start = start,
+		.size = size,
+	};
+
+	return device_for_each_child(&nvdimm_bus->dev, &ctx, region_conflict);
+}
 
 void __exit nd_region_devs_exit(void)
 {

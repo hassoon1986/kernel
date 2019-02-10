@@ -281,14 +281,12 @@ static inline void update_turbo_state(void)
 		 cpu->pstate.max_pstate == cpu->pstate.turbo_pstate);
 }
 
-static void intel_pstate_hwp_set(void)
+static void intel_pstate_hwp_set(const struct cpumask *cpumask)
 {
 	int min, hw_min, max, hw_max, cpu, range, adj_range;
 	u64 value, cap;
 
-	get_online_cpus();
-
-	for_each_online_cpu(cpu) {
+	for_each_cpu(cpu, cpumask) {
 		rdmsrl_on_cpu(cpu, MSR_HWP_CAPABILITIES, &cap);
 		hw_min = HWP_LOWEST_PERF(cap);
 		hw_max = HWP_HIGHEST_PERF(cap);
@@ -312,7 +310,20 @@ static void intel_pstate_hwp_set(void)
 		value |= HWP_MAX_PERF(max);
 		wrmsrl_on_cpu(cpu, MSR_HWP_REQUEST, value);
 	}
+}
 
+static int intel_pstate_hwp_set_policy(struct cpufreq_policy *policy)
+{
+	if (hwp_active)
+		intel_pstate_hwp_set(policy->cpus);
+
+	return 0;
+}
+
+static void intel_pstate_hwp_set_online_cpus(void)
+{
+	get_online_cpus();
+	intel_pstate_hwp_set(cpu_online_mask);
 	put_online_cpus();
 }
 
@@ -434,7 +445,7 @@ static ssize_t store_no_turbo(struct kobject *a, struct attribute *b,
 	limits->no_turbo = clamp_t(int, input, 0, 1);
 
 	if (hwp_active)
-		intel_pstate_hwp_set();
+		intel_pstate_hwp_set_online_cpus();
 
 	return count;
 }
@@ -460,7 +471,7 @@ static ssize_t store_max_perf_pct(struct kobject *a, struct attribute *b,
 				  int_tofp(100));
 
 	if (hwp_active)
-		intel_pstate_hwp_set();
+		intel_pstate_hwp_set_online_cpus();
 	return count;
 }
 
@@ -485,7 +496,7 @@ static ssize_t store_min_perf_pct(struct kobject *a, struct attribute *b,
 				  int_tofp(100));
 
 	if (hwp_active)
-		intel_pstate_hwp_set();
+		intel_pstate_hwp_set_online_cpus();
 	return count;
 }
 
@@ -1148,7 +1159,7 @@ static int intel_pstate_set_policy(struct cpufreq_policy *policy)
 		pr_debug("intel_pstate: set performance\n");
 		limits = &performance_limits;
 		if (hwp_active)
-			intel_pstate_hwp_set();
+			intel_pstate_hwp_set(policy->cpus);
 		return 0;
 	}
 
@@ -1179,8 +1190,7 @@ static int intel_pstate_set_policy(struct cpufreq_policy *policy)
 	limits->max_perf = div_fp(int_tofp(limits->max_perf_pct),
 				  int_tofp(100));
 
-	if (hwp_active)
-		intel_pstate_hwp_set();
+	intel_pstate_hwp_set_policy(policy);
 
 	return 0;
 }
@@ -1243,6 +1253,7 @@ static struct cpufreq_driver intel_pstate_driver = {
 	.flags		= CPUFREQ_CONST_LOOPS,
 	.verify		= intel_pstate_verify_policy,
 	.setpolicy	= intel_pstate_set_policy,
+	.resume		= intel_pstate_hwp_set_policy,
 	.get		= intel_pstate_get,
 	.init		= intel_pstate_cpu_init,
 	.stop_cpu	= intel_pstate_stop_cpu,
