@@ -2800,7 +2800,6 @@ static int kvm_ioctl_create_device(struct kvm *kvm,
 		return ret;
 	}
 
-	list_add(&dev->vm_node, &kvm->devices);
 	cd->fd = ret;
 	return 0;
 }
