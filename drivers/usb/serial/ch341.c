@@ -613,9 +613,7 @@ static int ch341_tiocmget(struct tty_struct *tty)
 static int ch341_reset_resume(struct usb_interface *intf)
 {
 	struct usb_device *dev = interface_to_usbdev(intf);
-	struct usb_serial *serial = NULL;
-
-	serial = usb_get_intfdata(intf);
+	struct usb_serial *serial = usb_get_intfdata(intf);
 	struct usb_serial_port *port = serial->port[0];
 	struct ch341_private *priv = usb_get_serial_port_data(port);
 	int ret;
