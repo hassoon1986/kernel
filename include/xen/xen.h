@@ -43,4 +43,8 @@ extern enum xen_domain_type xen_domain_type;
 #else
 #define xen_pvh_domain()	(0)
 #endif
+
+#if defined(CONFIG_MEMORY_HOTPLUG) && defined(CONFIG_XEN_BALLOON)
+extern u64 xen_saved_max_mem_size;
+#endif
 #endif	/* _XEN_XEN_H */
