@@ -1594,6 +1594,7 @@ static void do_attach(struct device *dev, struct protection_domain *domain)
 
 static void do_detach(struct device *dev)
 {
+	struct protection_domain *domain;
 	struct iommu_dev_data *dev_data;
 	struct amd_iommu *iommu;
 	u16 devid;
@@ -1601,10 +1602,7 @@ static void do_detach(struct device *dev)
 	devid    = get_device_id(dev);
 	iommu    = amd_iommu_rlookup_table[devid];
 	dev_data = get_dev_data(dev);
-
-	/* decrease reference counters */
-	dev_data->domain->dev_iommu[iommu->index] -= 1;
-	dev_data->domain->dev_cnt                 -= 1;
+	domain   = dev_data->domain;
 
 	/* Update data structures */
 	dev_data->domain = NULL;
@@ -1613,6 +1611,16 @@ static void do_detach(struct device *dev)
 
 	/* Flush the DTE entry */
 	device_flush_dte(dev);
+
+	/* Flush IOTLB */
+	domain_flush_tlb_pde(domain);
+
+	/* Wait for the flushes to finish */
+	domain_flush_complete(domain);
+
+	/* decrease reference counters - needs to happen after the flushes */
+	domain->dev_iommu[iommu->index] -= 1;
+	domain->dev_cnt                 -= 1;
 }
 
 /*
