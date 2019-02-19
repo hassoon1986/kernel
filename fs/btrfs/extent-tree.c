@@ -9380,7 +9380,7 @@ int btrfs_trim_fs(struct btrfs_root *root, struct fstrim_range *range)
 	int ret = 0;
 
 	cache = btrfs_lookup_first_block_group(fs_info, range->start);
-	for (; cache; cache = next_block_group(fs_info, cache)) {
+	for (; cache; cache = next_block_group(fs_info->tree_root, cache)) {
 		if (cache->key.objectid >= (range->start + range->len)) {
 			btrfs_put_block_group(cache);
 			break;
