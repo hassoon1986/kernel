@@ -186,6 +186,8 @@ static int bcm2835_sdhci_probe(struct platform_device *pdev)
 err_clk:
 	clk_disable_unprepare(pltfm_host->clk);
 err:
+	if (host->dma_chan_rxtx)
+		dma_release_channel(host->dma_chan_rxtx);
 	sdhci_pltfm_free(pdev);
 	return ret;
 }
