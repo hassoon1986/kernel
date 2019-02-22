@@ -137,7 +137,7 @@ struct bnxt_re_dev {
 	struct bnxt_re_qp		*qp1_sqp;
 	struct bnxt_re_ah		*sqp_ah;
 	struct bnxt_re_sqp_entries sqp_tbl[1024];
-	atomic_t nq_alloc_cnt;
+	atomic_t			nq_alloc_cnt;
 };
 
 #define to_bnxt_re_dev(ptr, member)	\
