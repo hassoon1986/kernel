@@ -115,7 +115,7 @@ void bnxt_qplib_add_flush_qp(struct bnxt_qplib_qp *qp)
 	}
 }
 
-void bnxt_qplib_clean_qp(struct bnxt_qplib_qp *qp)
+void bnxt_qplib_del_flush_qp(struct bnxt_qplib_qp *qp)
 {
 	struct bnxt_qplib_cq *scq, *rcq;
 	unsigned long flags;
@@ -186,7 +186,7 @@ static int bnxt_qplib_alloc_qp_hdr_buf(struct bnxt_qplib_res *res,
 				       struct bnxt_qplib_qp *qp)
 {
 	struct bnxt_qplib_q *rq = &qp->rq;
-	struct bnxt_qplib_q *sq = &qp->sq;
+	struct bnxt_qplib_q *sq = &qp->rq;
 	int rc = 0;
 
 	if (qp->sq_hdr_buf_size && sq->hwq.max_elements) {
@@ -1096,6 +1096,7 @@ int bnxt_qplib_destroy_qp(struct bnxt_qplib_res *res,
 	struct bnxt_qplib_rcfw *rcfw = res->rcfw;
 	struct cmdq_destroy_qp req;
 	struct creq_destroy_qp_resp resp;
+	unsigned long flags;
 	u16 cmd_flags = 0;
 	int rc;
 
@@ -1113,13 +1114,18 @@ int bnxt_qplib_destroy_qp(struct bnxt_qplib_res *res,
 		return rc;
 	}
 
-	return 0;
-}
+	/* Must walk the associated CQs to nullified the QP ptr */
+	spin_lock_irqsave(&qp->scq->hwq.lock, flags);
 
+	__clean_cq(qp->scq, (u64)(unsigned long)qp);
 
-void bnxt_qplib_free_qp_res(struct bnxt_qplib_res *res,
-                           struct bnxt_qplib_qp *qp)
-{
+	if (qp->rcq && qp->rcq != qp->scq) {
+		spin_lock(&qp->rcq->hwq.lock);
+		__clean_cq(qp->rcq, (u64)(unsigned long)qp);
+		spin_unlock(&qp->rcq->hwq.lock);
+	}
+
+	spin_unlock_irqrestore(&qp->scq->hwq.lock, flags);
 
 	bnxt_qplib_free_qp_hdr_buf(res, qp);
 	bnxt_qplib_free_hwq(res->pdev, &qp->sq.hwq);
@@ -1133,6 +1139,7 @@ void bnxt_qplib_free_qp_res(struct bnxt_qplib_res *res,
 	if (qp->orrq.max_elements)
 		bnxt_qplib_free_hwq(res->pdev, &qp->orrq);
 
+	return 0;
 }
 
 void *bnxt_qplib_get_qp1_sq_buf(struct bnxt_qplib_qp *qp,
