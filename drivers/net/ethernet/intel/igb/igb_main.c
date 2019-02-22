@@ -2282,9 +2282,11 @@ static int igb_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	adapter->msg_enable = netif_msg_init(debug, DEFAULT_MSG_ENABLE);
 
 	err = -EIO;
-	hw->hw_addr = pci_iomap(pdev, 0, 0);
-	if (!hw->hw_addr)
+	adapter->io_addr = pci_iomap(pdev, 0, 0);
+	if (!adapter->io_addr)
 		goto err_ioremap;
+	/* hw->hw_addr can be altered, we'll use adapter->io_addr for unmap */
+	hw->hw_addr = adapter->io_addr;
 
 	netdev->netdev_ops = &igb_netdev_ops;
 	igb_set_ethtool_ops(netdev);
@@ -2624,7 +2626,7 @@ err_eeprom:
 		iounmap(hw->flash_address);
 err_sw_init:
 	igb_clear_interrupt_scheme(adapter);
-	pci_iounmap(pdev, hw->hw_addr);
+	pci_iounmap(pdev, adapter->io_addr);
 err_ioremap:
 	free_netdev(netdev);
 err_alloc_etherdev:
@@ -2715,7 +2717,7 @@ static void igb_remove(struct pci_dev *pdev)
 	}
 #endif
 
-	pci_iounmap(pdev, hw->hw_addr);
+	pci_iounmap(pdev, adapter->io_addr);
 	if (hw->flash_address)
 		iounmap(hw->flash_address);
 	pci_release_selected_regions(pdev,
@@ -7575,6 +7577,11 @@ static pci_ers_result_t igb_io_slot_reset(struct pci_dev *pdev)
 
 		pci_enable_wake(pdev, PCI_D3hot, 0);
 		pci_enable_wake(pdev, PCI_D3cold, 0);
+
+		/* In case of PCI error, adapter lose its HW address
+		 * so we should re-assign it here.
+		 */
+		hw->hw_addr = adapter->io_addr;
 
 		igb_reset(adapter);
 		wr32(E1000_WUS, ~0);
