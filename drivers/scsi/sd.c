@@ -415,13 +415,6 @@ provisioning_mode_store(struct device *dev, struct device_attribute *attr,
 	if (sdp->type != TYPE_DISK)
 		return -EINVAL;
 
-	/*
-	 * If logical block provisioning isn't enabled we can only
-	 * select 'disable' here.
-	 */
-	if (!sdkp->lbpme && strncmp(buf, lbp_mode[SD_LBP_DISABLE], 20))
-		return -EINVAL;
-
 	if (!strncmp(buf, lbp_mode[SD_LBP_UNMAP], 20))
 		sd_config_discard(sdkp, SD_LBP_UNMAP);
 	else if (!strncmp(buf, lbp_mode[SD_LBP_WS16], 20))
@@ -2796,10 +2789,8 @@ static void sd_read_block_limits(struct scsi_disk *sdkp)
 
 		sdkp->max_ws_blocks = (u32)get_unaligned_be64(&buffer[36]);
 
-		if (!sdkp->lbpme) {
-			sd_config_discard(sdkp, SD_LBP_DISABLE);
+		if (!sdkp->lbpme)
 			goto out;
-		}
 
 		lba_count = get_unaligned_be32(&buffer[20]);
 		desc_count = get_unaligned_be32(&buffer[24]);
