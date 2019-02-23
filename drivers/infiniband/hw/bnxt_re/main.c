@@ -678,13 +678,12 @@ static int bnxt_re_init_res(struct bnxt_re_dev *rdev)
 
 	for (i = 1; i < rdev->num_msix ; i++) {
 		rc = bnxt_qplib_enable_nq(rdev->en_dev->pdev, &rdev->nq[i - 1],
-					  i - 1, rdev->msix_entries[i].vector,
-					  rdev->msix_entries[i].db_offset,
-					  &bnxt_re_cqn_handler, NULL);
-
+				i - 1, rdev->msix_entries[i].vector,
+				rdev->msix_entries[i].db_offset,
+				&bnxt_re_cqn_handler, NULL);
 		if (rc) {
 			dev_err(rdev_to_dev(rdev),
-				"Failed to enable NQ with rc = 0x%x", rc);
+					"Failed to enable NQ with rc = 0x%x", rc);
 			goto fail;
 		}
 	}
@@ -745,7 +744,7 @@ static int bnxt_re_alloc_res(struct bnxt_re_dev *rdev)
 		rc = bnxt_qplib_alloc_nq(rdev->en_dev->pdev, &rdev->nq[i]);
 		if (rc) {
 			dev_err(rdev_to_dev(rdev), "Alloc Failed NQ%d rc:%#x",
-				i, rc);
+					i, rc);
 			goto dealloc_dpi;
 		}
 		rc = bnxt_re_net_ring_alloc
@@ -757,8 +756,8 @@ static int bnxt_re_alloc_res(struct bnxt_re_dev *rdev)
 			 &rdev->nq[i].ring_id);
 		if (rc) {
 			dev_err(rdev_to_dev(rdev),
-				"Failed to allocate NQ fw id with rc = 0x%x",
-				rc);
+					"Failed to allocate NQ fw id with rc = 0x%x",
+					rc);
 			goto free_nq;
 		}
 	}
@@ -768,8 +767,8 @@ free_nq:
 		bnxt_qplib_free_nq(&rdev->nq[i]);
 dealloc_dpi:
 	bnxt_qplib_dealloc_dpi(&rdev->qplib_res,
-			       &rdev->qplib_res.dpi_tbl,
-			       &rdev->dpi_privileged);
+			&rdev->qplib_res.dpi_tbl,
+			&rdev->dpi_privileged);
 dealloc_res:
 	bnxt_qplib_free_res(&rdev->qplib_res);
 
@@ -1072,7 +1071,7 @@ static int bnxt_re_ib_reg(struct bnxt_re_dev *rdev)
 	 * memory for the function and all child VFs
 	 */
 	rc = bnxt_qplib_alloc_rcfw_channel(rdev->en_dev->pdev, &rdev->rcfw,
-					   BNXT_RE_MAX_QPC_COUNT);
+			BNXT_RE_MAX_QPC_COUNT);
 	if (rc)
 		goto fail;
 

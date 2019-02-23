@@ -51,113 +51,167 @@
 #include "qplib_fp.h"
 
 static void bnxt_qplib_arm_cq_enable(struct bnxt_qplib_cq *cq);
-
-/* Flush list */
-
-/* To avoid processing completions if QP is already in flush list */
-static bool bnxt_qplib_is_qp_in_rq_flushlist(struct bnxt_qplib_qp *qp)
-{
-	bool flushed = false;
-	unsigned long flags;
-
-	spin_lock_irqsave(&qp->rcq->flush_lock, flags);
-	flushed = qp->rq.flushed;
-	spin_unlock_irqrestore(&qp->rcq->flush_lock, flags);
-	return flushed;
-}
-
-static bool bnxt_qplib_is_qp_in_sq_flushlist(struct bnxt_qplib_qp *qp)
-{
-	bool flushed = false;
-	unsigned long flags;
-
-	spin_lock_irqsave(&qp->scq->flush_lock, flags);
-	flushed = qp->sq.flushed;
-	spin_unlock_irqrestore(&qp->scq->flush_lock, flags);
-	return flushed;
-}
+static void __clean_cq(struct bnxt_qplib_cq *cq, u64 qp);
 
 static void bnxt_qplib_cancel_phantom_processing(struct bnxt_qplib_qp *qp)
 {
-	qp->sq.condition = false;
-	qp->sq.send_phantom = false;
-	qp->sq.single = false;
+       qp->sq.condition = false;
+       qp->sq.send_phantom = false;
+       qp->sq.single = false;
+}
+
+/* Flush list */
+static void __bnxt_qplib_add_flush_qp(struct bnxt_qplib_qp *qp)
+{
+       struct bnxt_qplib_cq *scq, *rcq;
+
+       scq = qp->scq;
+       rcq = qp->rcq;
+
+       if (!qp->sq.flushed) {
+               dev_dbg(&scq->hwq.pdev->dev,
+                       "QPLIB: FP: Adding to SQ Flush list = %p",
+                       qp);
+               bnxt_qplib_cancel_phantom_processing(qp);
+               list_add_tail(&qp->sq_flush, &scq->sqf_head);
+               qp->sq.flushed = true;
+       }
+       if (!qp->srq) {
+               if (!qp->rq.flushed) {
+                       dev_dbg(&rcq->hwq.pdev->dev,
+                               "QPLIB: FP: Adding to RQ Flush list = %p",
+                               qp);
+                       list_add_tail(&qp->rq_flush, &rcq->rqf_head);
+                       qp->rq.flushed = true;
+               }
+       }
+}
+
+void bnxt_qplib_acquire_cq_locks(struct bnxt_qplib_qp *qp,
+                                unsigned long *flags)
+       __acquires(&qp->scq->hwq.lock) __acquires(&qp->rcq->hwq.lock)
+{
+       spin_lock_irqsave(&qp->scq->hwq.lock, *flags);
+       if (qp->scq == qp->rcq)
+               __acquire(&qp->rcq->hwq.lock);
+       else
+               spin_lock(&qp->rcq->hwq.lock);
+}
+
+void bnxt_qplib_release_cq_locks(struct bnxt_qplib_qp *qp,
+                                unsigned long *flags)
+       __releases(&qp->scq->hwq.lock) __releases(&qp->rcq->hwq.lock)
+{
+       if (qp->scq == qp->rcq)
+               __release(&qp->rcq->hwq.lock);
+       else
+               spin_unlock(&qp->rcq->hwq.lock);
+       spin_unlock_irqrestore(&qp->scq->hwq.lock, *flags);
+}
+
+static struct bnxt_qplib_cq *bnxt_qplib_find_buddy_cq(struct bnxt_qplib_qp *qp,
+                                                     struct bnxt_qplib_cq *cq)
+{
+       struct bnxt_qplib_cq *buddy_cq = NULL;
+
+       if (qp->scq == qp->rcq)
+               buddy_cq = NULL;
+       else if (qp->scq == cq)
+               buddy_cq = qp->rcq;
+       else
+               buddy_cq = qp->scq;
+       return buddy_cq;
+}
+
+static void bnxt_qplib_lock_buddy_cq(struct bnxt_qplib_qp *qp,
+                                    struct bnxt_qplib_cq *cq)
+       __acquires(&buddy_cq->hwq.lock)
+{
+       struct bnxt_qplib_cq *buddy_cq = NULL;
+
+       buddy_cq = bnxt_qplib_find_buddy_cq(qp, cq);
+       if (!buddy_cq)
+               __acquire(&cq->hwq.lock);
+       else
+               spin_lock(&buddy_cq->hwq.lock);
+}
+
+static void bnxt_qplib_unlock_buddy_cq(struct bnxt_qplib_qp *qp,
+                                      struct bnxt_qplib_cq *cq)
+       __releases(&buddy_cq->hwq.lock)
+{
+       struct bnxt_qplib_cq *buddy_cq = NULL;
+
+       buddy_cq = bnxt_qplib_find_buddy_cq(qp, cq);
+       if (!buddy_cq)
+               __release(&cq->hwq.lock);
+       else
+               spin_unlock(&buddy_cq->hwq.lock);
 }
 
 void bnxt_qplib_add_flush_qp(struct bnxt_qplib_qp *qp)
 {
-	struct bnxt_qplib_cq *scq, *rcq;
-	unsigned long flags;
+       unsigned long flags;
 
-	scq = qp->scq;
-	rcq = qp->rcq;
+       bnxt_qplib_acquire_cq_locks(qp, &flags);
+       __bnxt_qplib_add_flush_qp(qp);
+       bnxt_qplib_release_cq_locks(qp, &flags);
+}
 
-	spin_lock_irqsave(&scq->flush_lock, flags);
-	if (!qp->sq.flushed) {
-		dev_dbg(&scq->hwq.pdev->dev,
-			"QPLIB: FP: Adding to SQ Flush list = %p",
-			qp);
-		bnxt_qplib_cancel_phantom_processing(qp);
-		list_add_tail(&qp->sq_flush, &scq->sqf_head);
-		qp->sq.flushed = true;
-	}
-	spin_unlock_irqrestore(&scq->flush_lock, flags);
-	if (!qp->srq) {
-		spin_lock_irqsave(&rcq->flush_lock, flags);
-		if (!qp->rq.flushed) {
-			dev_dbg(&rcq->hwq.pdev->dev,
-				"QPLIB: FP: Adding to RQ Flush list = %p",
-				qp);
-			list_add_tail(&qp->rq_flush, &rcq->rqf_head);
-			qp->rq.flushed = true;
-		}
-		spin_unlock_irqrestore(&rcq->flush_lock, flags);
-	}
+static void __bnxt_qplib_del_flush_qp(struct bnxt_qplib_qp *qp)
+{
+       struct bnxt_qplib_cq *scq, *rcq;
+
+       scq = qp->scq;
+       rcq = qp->rcq;
+
+       if (qp->sq.flushed) {
+               qp->sq.flushed = false;
+               list_del(&qp->sq_flush);
+       }
+       if (!qp->srq) {
+               if (qp->rq.flushed) {
+                       qp->rq.flushed = false;
+                       list_del(&qp->rq_flush);
+               }
+       }
 }
 
 void bnxt_qplib_del_flush_qp(struct bnxt_qplib_qp *qp)
 {
-	struct bnxt_qplib_cq *scq, *rcq;
-	unsigned long flags;
+       unsigned long flags;
 
-	scq = qp->scq;
-	rcq = qp->rcq;
+       bnxt_qplib_acquire_cq_locks(qp, &flags);
+       __clean_cq(qp->scq, (u64)(unsigned long)qp);
+       qp->sq.hwq.prod = 0;
+       qp->sq.hwq.cons = 0;
+       __clean_cq(qp->rcq, (u64)(unsigned long)qp);
+       qp->rq.hwq.prod = 0;
+       qp->rq.hwq.cons = 0;
 
-	spin_lock_irqsave(&scq->flush_lock, flags);
-	if (qp->sq.flushed) {
-		qp->sq.flushed = false;
-		list_del(&qp->sq_flush);
-	}
-	spin_unlock_irqrestore(&scq->flush_lock, flags);
-	if (!qp->srq) {
-		spin_lock_irqsave(&rcq->flush_lock, flags);
-		if (qp->rq.flushed) {
-			qp->rq.flushed = false;
-			list_del(&qp->rq_flush);
-		}
-		spin_unlock_irqrestore(&rcq->flush_lock, flags);
-	}
+       __bnxt_qplib_del_flush_qp(qp);
+       bnxt_qplib_release_cq_locks(qp, &flags);
 }
 
 static void bnxt_qpn_cqn_sched_task(struct work_struct *work)
 {
-	struct bnxt_qplib_nq_work *nq_work =
-			container_of(work, struct bnxt_qplib_nq_work, work);
+       struct bnxt_qplib_nq_work *nq_work =
+                       container_of(work, struct bnxt_qplib_nq_work, work);
 
-	struct bnxt_qplib_cq *cq = nq_work->cq;
-	struct bnxt_qplib_nq *nq = nq_work->nq;
+       struct bnxt_qplib_cq *cq = nq_work->cq;
+       struct bnxt_qplib_nq *nq = nq_work->nq;
 
-	if (cq && nq) {
-		spin_lock_bh(&cq->compl_lock);
-		if (atomic_read(&cq->arm_state) && nq->cqn_handler) {
-			dev_dbg(&nq->pdev->dev,
-				"%s:Trigger cq  = %p event nq = %p\n",
-				__func__, cq, nq);
-			nq->cqn_handler(nq, cq);
-		}
-		spin_unlock_bh(&cq->compl_lock);
-	}
-	kfree(nq_work);
+       if (cq && nq) {
+               spin_lock_bh(&cq->compl_lock);
+               if (atomic_read(&cq->arm_state) && nq->cqn_handler) {
+                       dev_dbg(&nq->pdev->dev,
+                               "%s:Trigger cq  = %p event nq = %p\n",
+                               __func__, cq, nq);
+                       nq->cqn_handler(nq, cq);
+               }
+               spin_unlock_bh(&cq->compl_lock);
+       }
+       kfree(nq_work);
 }
 
 static void bnxt_qplib_free_qp_hdr_buf(struct bnxt_qplib_res *res,
@@ -364,8 +418,8 @@ int bnxt_qplib_enable_nq(struct pci_dev *pdev, struct bnxt_qplib_nq *nq,
 	rc = irq_set_affinity_hint(nq->vector, &nq->mask);
 	if (rc) {
 		dev_warn(&nq->pdev->dev,
-			 "QPLIB: set affinity failed; vector: %d nq_idx: %d\n",
-			 nq->vector, nq_idx);
+				"QPLIB: set affinity failed; vector: %d nq_idx: %d\n",
+				nq->vector, nq_idx);
 	}
 
 	nq->requested = true;
@@ -1451,6 +1505,7 @@ int bnxt_qplib_post_send(struct bnxt_qplib_qp *qp,
 			((swq->next_psn << SQ_PSN_SEARCH_NEXT_PSN_SFT) &
 			 SQ_PSN_SEARCH_NEXT_PSN_MASK));
 	}
+
 queue_err:
 	if (sch_handler) {
 		/* Store the ULP info in the software structures */
@@ -1464,6 +1519,7 @@ queue_err:
 		swq->start_psn = sq->psn & BTH_PSN_MASK;
 	}
 	sq->hwq.prod++;
+
 	qp->wqe_cnt++;
 
 done:
@@ -1476,7 +1532,7 @@ done:
 			queue_work(qp->scq->nq->cqn_wq, &nq_work->work);
 		} else {
 			dev_err(&sq->hwq.pdev->dev,
-				"QPLIB: FP: Failed to allocate SQ nq_work!");
+					"QPLIB: FP: Failed to allocate SQ nq_work!");
 			rc = -ENOMEM;
 		}
 	}
@@ -1515,8 +1571,8 @@ int bnxt_qplib_post_recv(struct bnxt_qplib_qp *qp,
 	if (qp->state == CMDQ_MODIFY_QP_NEW_STATE_ERR) {
 		sch_handler = true;
 		dev_dbg(&rq->hwq.pdev->dev,
-			"%s Error QP. Scheduling for poll_cq\n",
-			__func__);
+				"%s Error QP. Scheduling for poll_cq\n",
+				__func__);
 		goto queue_err;
 	}
 	if (bnxt_qplib_queue_full(rq)) {
@@ -1570,7 +1626,7 @@ queue_err:
 			queue_work(qp->rcq->nq->cqn_wq, &nq_work->work);
 		} else {
 			dev_err(&rq->hwq.pdev->dev,
-				"QPLIB: FP: Failed to allocate RQ nq_work!");
+					"QPLIB: FP: Failed to allocate RQ nq_work!");
 			rc = -ENOMEM;
 		}
 	}
@@ -1668,7 +1724,6 @@ int bnxt_qplib_create_cq(struct bnxt_qplib_res *res, struct bnxt_qplib_cq *cq)
 	init_waitqueue_head(&cq->waitq);
 	INIT_LIST_HEAD(&cq->sqf_head);
 	INIT_LIST_HEAD(&cq->rqf_head);
-	spin_lock_init(&cq->flush_lock);
 	spin_lock_init(&cq->compl_lock);
 
 	bnxt_qplib_arm_cq_enable(cq);
@@ -1786,17 +1841,17 @@ static int __flush_rq(struct bnxt_qplib_q *rq, struct bnxt_qplib_qp *qp,
 
 void bnxt_qplib_mark_qp_error(void *qp_handle)
 {
-	struct bnxt_qplib_qp *qp = qp_handle;
+       struct bnxt_qplib_qp *qp = qp_handle;
 
-	if (!qp)
-		return;
+       if (!qp)
+               return;
 
-	/* Must block new posting of SQ and RQ */
-	qp->state = CMDQ_MODIFY_QP_NEW_STATE_ERR;
-	bnxt_qplib_cancel_phantom_processing(qp);
+       /* Must block new posting of SQ and RQ */
+       qp->state = CMDQ_MODIFY_QP_NEW_STATE_ERR;
+       bnxt_qplib_cancel_phantom_processing(qp);
 
-	/* Add qp to flush list of the CQ */
-	bnxt_qplib_add_flush_qp(qp);
+       /* Add qp to flush list of the CQ */
+       __bnxt_qplib_add_flush_qp(qp);
 }
 
 /* Note: SQE is valid from sw_sq_cons up to cqe_sq_cons (exclusive)
@@ -1926,11 +1981,12 @@ static int bnxt_qplib_cq_process_req(struct bnxt_qplib_cq *cq,
 		return -EINVAL;
 	}
 
-	if (bnxt_qplib_is_qp_in_sq_flushlist(qp)) {
+	if (qp->sq.flushed) {
 		dev_dbg(&cq->hwq.pdev->dev,
-			"%s: QPLIB: QP in Flush QP = %p\n", __func__, qp);
+				"%s: QPLIB: QP in Flush QP = %p\n", __func__, qp);
 		goto done;
 	}
+
 	/* Require to walk the sq's swq to fabricate CQEs for all previously
 	 * signaled SWQEs due to CQE aggregation from the current sq cons
 	 * to the cqe_sq_cons
@@ -1966,7 +2022,9 @@ static int bnxt_qplib_cq_process_req(struct bnxt_qplib_cq *cq,
 				sw_sq_cons, cqe->wr_id, cqe->status);
 			cqe++;
 			(*budget)--;
+			bnxt_qplib_lock_buddy_cq(qp, cq);
 			bnxt_qplib_mark_qp_error(qp);
+			bnxt_qplib_unlock_buddy_cq(qp, cq);
 		} else {
 			if (swq->flags & SQ_SEND_FLAGS_SIGNAL_COMP) {
 				/* Before we complete, do WA 9060 */
@@ -2018,12 +2076,11 @@ static int bnxt_qplib_cq_process_res_rc(struct bnxt_qplib_cq *cq,
 		dev_err(&cq->hwq.pdev->dev, "QPLIB: process_cq RC qp is NULL");
 		return -EINVAL;
 	}
-	if (bnxt_qplib_is_qp_in_rq_flushlist(qp)) {
+	if (qp->rq.flushed) {
 		dev_dbg(&cq->hwq.pdev->dev,
-			"%s: QPLIB: QP in Flush QP = %p\n", __func__, qp);
+				"%s: QPLIB: QP in Flush QP = %p\n", __func__, qp);
 		goto done;
 	}
-
 	cqe = *pcqe;
 	cqe->opcode = hwcqe->cqe_type_toggle & CQ_BASE_CQE_TYPE_MASK;
 	cqe->length = le32_to_cpu(hwcqe->length);
@@ -2050,9 +2107,12 @@ static int bnxt_qplib_cq_process_res_rc(struct bnxt_qplib_cq *cq,
 	rq->hwq.cons++;
 	*pcqe = cqe;
 
-	if (hwcqe->status != CQ_RES_RC_STATUS_OK)
-		 /* Add qp to flush list of the CQ */
-		bnxt_qplib_add_flush_qp(qp);
+	if (hwcqe->status != CQ_RES_RC_STATUS_OK) {
+		/* Add qp to flush list of the CQ */
+		bnxt_qplib_lock_buddy_cq(qp, cq);
+		__bnxt_qplib_add_flush_qp(qp);
+		bnxt_qplib_unlock_buddy_cq(qp, cq);
+	}
 
 done:
 	return rc;
@@ -2075,9 +2135,9 @@ static int bnxt_qplib_cq_process_res_ud(struct bnxt_qplib_cq *cq,
 		dev_err(&cq->hwq.pdev->dev, "QPLIB: process_cq UD qp is NULL");
 		return -EINVAL;
 	}
-	if (bnxt_qplib_is_qp_in_rq_flushlist(qp)) {
+	if (qp->rq.flushed) {
 		dev_dbg(&cq->hwq.pdev->dev,
-			"%s: QPLIB: QP in Flush QP = %p\n", __func__, qp);
+				"%s: QPLIB: QP in Flush QP = %p\n", __func__, qp);
 		goto done;
 	}
 	cqe = *pcqe;
@@ -2110,10 +2170,12 @@ static int bnxt_qplib_cq_process_res_ud(struct bnxt_qplib_cq *cq,
 	rq->hwq.cons++;
 	*pcqe = cqe;
 
-	if (hwcqe->status != CQ_RES_RC_STATUS_OK)
+	if (hwcqe->status != CQ_RES_RC_STATUS_OK) {
 		/* Add qp to flush list of the CQ */
-		bnxt_qplib_add_flush_qp(qp);
-
+		bnxt_qplib_lock_buddy_cq(qp, cq);
+		__bnxt_qplib_add_flush_qp(qp);
+		bnxt_qplib_unlock_buddy_cq(qp, cq);
+	}
 done:
 	return rc;
 }
@@ -2136,9 +2198,9 @@ static int bnxt_qplib_cq_process_res_raweth_qp1(struct bnxt_qplib_cq *cq,
 			"QPLIB: process_cq Raw/QP1 qp is NULL");
 		return -EINVAL;
 	}
-	if (bnxt_qplib_is_qp_in_rq_flushlist(qp)) {
+	if (qp->rq.flushed) {
 		dev_dbg(&cq->hwq.pdev->dev,
-			"%s: QPLIB: QP in Flush QP = %p\n", __func__, qp);
+				"%s: QPLIB: QP in Flush QP = %p\n", __func__, qp);
 		goto done;
 	}
 	cqe = *pcqe;
@@ -2176,9 +2238,12 @@ static int bnxt_qplib_cq_process_res_raweth_qp1(struct bnxt_qplib_cq *cq,
 	rq->hwq.cons++;
 	*pcqe = cqe;
 
-	if (hwcqe->status != CQ_RES_RC_STATUS_OK)
-	/* Add qp to flush list of the CQ */
-		bnxt_qplib_add_flush_qp(qp);
+	if (hwcqe->status != CQ_RES_RC_STATUS_OK) {
+		/* Add qp to flush list of the CQ */
+		bnxt_qplib_lock_buddy_cq(qp, cq);
+		__bnxt_qplib_add_flush_qp(qp);
+		bnxt_qplib_unlock_buddy_cq(qp, cq);
+	}
 
 done:
 	return rc;
@@ -2208,6 +2273,7 @@ static int bnxt_qplib_cq_process_terminal(struct bnxt_qplib_cq *cq,
 			"QPLIB: FP: CQ Process terminal qp is NULL");
 		return -EINVAL;
 	}
+
 	/* Must block new posting of SQ and RQ */
 	qp->state = CMDQ_MODIFY_QP_NEW_STATE_ERR;
 
@@ -2227,9 +2293,9 @@ static int bnxt_qplib_cq_process_terminal(struct bnxt_qplib_cq *cq,
 		goto do_rq;
 	}
 
-	if (bnxt_qplib_is_qp_in_sq_flushlist(qp)) {
+	if (qp->sq.flushed) {
 		dev_dbg(&cq->hwq.pdev->dev,
-			"%s: QPLIB: QP in Flush QP = %p\n", __func__, qp);
+				"%s: QPLIB: QP in Flush QP = %p\n", __func__, qp);
 		goto sq_done;
 	}
 
@@ -2277,20 +2343,21 @@ do_rq:
 		goto done;
 	}
 
-	if (bnxt_qplib_is_qp_in_rq_flushlist(qp)) {
+	if (qp->rq.flushed) {
 		dev_dbg(&cq->hwq.pdev->dev,
-			"%s: QPLIB: QP in Flush QP = %p\n", __func__, qp);
+				"%s: QPLIB: QP in Flush QP = %p\n", __func__, qp);
 		rc = 0;
 		goto done;
 	}
-
 	/* Terminal CQE requires all posted RQEs to complete with FLUSHED_ERR
 	 * from the current rq->cons to the rq->prod regardless what the
 	 * rq->cons the terminal CQE indicates
 	 */
 
 	/* Add qp to flush list of the CQ */
-	bnxt_qplib_add_flush_qp(qp);
+	bnxt_qplib_lock_buddy_cq(qp, cq);
+	__bnxt_qplib_add_flush_qp(qp);
+	bnxt_qplib_unlock_buddy_cq(qp, cq);
 done:
 	return rc;
 }
@@ -2312,30 +2379,30 @@ static int bnxt_qplib_cq_process_cutoff(struct bnxt_qplib_cq *cq,
 }
 
 int bnxt_qplib_process_flush_list(struct bnxt_qplib_cq *cq,
-				  struct bnxt_qplib_cqe *cqe,
-				  int num_cqes)
+                                 struct bnxt_qplib_cqe *cqe,
+                                 int num_cqes)
 {
-	struct bnxt_qplib_qp *qp = NULL;
-	u32 budget = num_cqes;
-	unsigned long flags;
+       struct bnxt_qplib_qp *qp = NULL;
+       u32 budget = num_cqes;
+       unsigned long flags;
 
-	spin_lock_irqsave(&cq->flush_lock, flags);
-	list_for_each_entry(qp, &cq->sqf_head, sq_flush) {
-		dev_dbg(&cq->hwq.pdev->dev,
-			"QPLIB: FP: Flushing SQ QP= %p",
-			qp);
-		__flush_sq(&qp->sq, qp, &cqe, &budget);
-	}
+       spin_lock_irqsave(&cq->hwq.lock, flags);
+       list_for_each_entry(qp, &cq->sqf_head, sq_flush) {
+               dev_dbg(&cq->hwq.pdev->dev,
+                       "QPLIB: FP: Flushing SQ QP= %p",
+                       qp);
+               __flush_sq(&qp->sq, qp, &cqe, &budget);
+       }
 
-	list_for_each_entry(qp, &cq->rqf_head, rq_flush) {
-		dev_dbg(&cq->hwq.pdev->dev,
-			"QPLIB: FP: Flushing RQ QP= %p",
-			qp);
-		__flush_rq(&qp->rq, qp, &cqe, &budget);
-	}
-	spin_unlock_irqrestore(&cq->flush_lock, flags);
+       list_for_each_entry(qp, &cq->rqf_head, rq_flush) {
+               dev_dbg(&cq->hwq.pdev->dev,
+                       "QPLIB: FP: Flushing RQ QP= %p",
+                       qp);
+               __flush_rq(&qp->rq, qp, &cqe, &budget);
+       }
+       spin_unlock_irqrestore(&cq->hwq.lock, flags);
 
-	return num_cqes - budget;
+       return num_cqes - budget;
 }
 
 int bnxt_qplib_poll_cq(struct bnxt_qplib_cq *cq, struct bnxt_qplib_cqe *cqe,
@@ -2428,6 +2495,7 @@ void bnxt_qplib_req_notify_cq(struct bnxt_qplib_cq *cq, u32 arm_type)
 	spin_lock_irqsave(&cq->hwq.lock, flags);
 	if (arm_type)
 		bnxt_qplib_arm_cq(cq, arm_type);
+
 	/* Using cq->arm_state variable to track whether to issue cq handler */
 	atomic_set(&cq->arm_state, 1);
 	spin_unlock_irqrestore(&cq->hwq.lock, flags);
