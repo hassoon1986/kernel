@@ -61,6 +61,9 @@ struct inet_peer {
 	/* following fields might be frequently dirtied */
 	__u32			dtime;	/* the time of last use of not referenced entries */
 	atomic_t		refcnt;
+#ifndef __GENKSYMS__
+	u32			n_redirects;
+#endif
 };
 
 struct inet_peer_base {
