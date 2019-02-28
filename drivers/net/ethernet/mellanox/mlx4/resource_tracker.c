@@ -4728,7 +4728,6 @@ static void rem_slave_srqs(struct mlx4_dev *dev, int slave)
 	struct res_srq *tmp;
 	int state;
 	u64 in_param;
-	LIST_HEAD(tlist);
 	int srqn;
 	int err;
 
@@ -4794,7 +4793,6 @@ static void rem_slave_cqs(struct mlx4_dev *dev, int slave)
 	struct res_cq *tmp;
 	int state;
 	u64 in_param;
-	LIST_HEAD(tlist);
 	int cqn;
 	int err;
 
@@ -4857,7 +4855,6 @@ static void rem_slave_mrs(struct mlx4_dev *dev, int slave)
 	struct res_mpt *tmp;
 	int state;
 	u64 in_param;
-	LIST_HEAD(tlist);
 	int mptn;
 	int err;
 
@@ -4925,7 +4922,6 @@ static void rem_slave_mtts(struct mlx4_dev *dev, int slave)
 	struct res_mtt *mtt;
 	struct res_mtt *tmp;
 	int state;
-	LIST_HEAD(tlist);
 	int base;
 	int err;
 
@@ -5114,7 +5110,6 @@ static void rem_slave_eqs(struct mlx4_dev *dev, int slave)
 	struct res_eq *tmp;
 	int err;
 	int state;
-	LIST_HEAD(tlist);
 	int eqn;
 
 	err = move_all_busy(dev, slave, RES_EQ);
