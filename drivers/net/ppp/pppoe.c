@@ -429,6 +429,9 @@ static int pppoe_rcv(struct sk_buff *skb, struct net_device *dev,
 	if (!skb)
 		goto out;
 
+	if ((skb->network_header - skb->mac_header) < ETH_HLEN)
+		goto drop;
+
 	if (!pskb_may_pull(skb, sizeof(struct pppoe_hdr)))
 		goto drop;
 
