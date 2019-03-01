@@ -4154,7 +4154,6 @@ static void qla2x00_async_gpnft_gnnft_sp_done(void *s, int res)
 	if (res) {
 		unsigned long flags;
 
-		sp->free(sp);
 		spin_lock_irqsave(&vha->work_lock, flags);
 		vha->scan.scan_flags &= ~SF_SCANNING;
 		vha->scan.scan_retry++;
