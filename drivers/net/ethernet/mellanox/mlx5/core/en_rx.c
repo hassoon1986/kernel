@@ -35,6 +35,7 @@
 #include <linux/ipv6.h>
 #include <linux/tcp.h>
 #include <net/busy_poll.h>
+#include <net/ip6_checksum.h>
 #include "en.h"
 #include "en_tc.h"
 #include "eswitch.h"
@@ -479,6 +480,22 @@ bool mlx5e_post_rx_wqes(struct mlx5e_rq *rq)
 	return !mlx5_wq_ll_is_full(wq);
 }
 
+static void mlx5e_lro_update_tcp_hdr(struct mlx5_cqe64 *cqe, struct tcphdr *tcp)
+{
+       u8 l4_hdr_type = get_cqe_l4_hdr_type(cqe);
+       u8 tcp_ack     = (l4_hdr_type == CQE_L4_HDR_TYPE_TCP_ACK_NO_DATA) ||
+                        (l4_hdr_type == CQE_L4_HDR_TYPE_TCP_ACK_AND_DATA);
+
+       tcp->check                      = 0;
+       tcp->psh                        = get_cqe_lro_tcppsh(cqe);
+
+       if (tcp_ack) {
+               tcp->ack                = 1;
+               tcp->ack_seq            = cqe->lro_ack_seq_num;
+               tcp->window             = cqe->lro_tcp_win;
+       }
+}
+
 static void mlx5e_lro_update_hdr(struct sk_buff *skb, struct mlx5_cqe64 *cqe,
 				 u32 cqe_bcnt)
 {
@@ -487,12 +504,9 @@ static void mlx5e_lro_update_hdr(struct sk_buff *skb, struct mlx5_cqe64 *cqe,
 	struct ipv6hdr	*ipv6;
 	struct tcphdr	*tcp;
 	int network_depth = 0;
+	__wsum check;
 	__be16 proto;
 	u16 tot_len;
-
-	u8 l4_hdr_type = get_cqe_l4_hdr_type(cqe);
-	int tcp_ack = ((CQE_L4_HDR_TYPE_TCP_ACK_NO_DATA  == l4_hdr_type) ||
-		       (CQE_L4_HDR_TYPE_TCP_ACK_AND_DATA == l4_hdr_type));
 
 	skb->mac_len = ETH_HLEN;
 	proto = __vlan_get_protocol(skb, eth->h_proto, &network_depth);
@@ -516,22 +530,31 @@ static void mlx5e_lro_update_hdr(struct sk_buff *skb, struct mlx5_cqe64 *cqe,
 	if (get_cqe_lro_tcppsh(cqe))
 		tcp->psh                = 1;
 
-	if (tcp_ack) {
-		tcp->ack                = 1;
-		tcp->ack_seq            = cqe->lro_ack_seq_num;
-		tcp->window             = cqe->lro_tcp_win;
-	}
-
 	if (ipv4) {
 		ipv4->ttl               = cqe->lro_min_ttl;
 		ipv4->tot_len           = cpu_to_be16(tot_len);
 		ipv4->check             = 0;
 		ipv4->check             = ip_fast_csum((unsigned char *)ipv4,
 						       ipv4->ihl);
+
+		mlx5e_lro_update_tcp_hdr(cqe, tcp);
+		check = csum_partial(tcp, tcp->doff * 4,
+				csum_unfold((__force __sum16)cqe->check_sum));
+		/* Almost done, don't forget the pseudo header */
+		tcp->check = csum_tcpudp_magic(ipv4->saddr, ipv4->daddr,
+				tot_len - sizeof(struct iphdr),
+				IPPROTO_TCP, check);
 	} else {
+		u16 payload_len = tot_len - sizeof(struct ipv6hdr);
 		ipv6->hop_limit         = cqe->lro_min_ttl;
-		ipv6->payload_len       = cpu_to_be16(tot_len -
-						      sizeof(struct ipv6hdr));
+		ipv6->payload_len       = cpu_to_be16(payload_len);
+
+		mlx5e_lro_update_tcp_hdr(cqe, tcp);
+		check = csum_partial(tcp, tcp->doff * 4,
+				csum_unfold((__force __sum16)cqe->check_sum));
+		/* Almost done, don't forget the pseudo header */
+		tcp->check = csum_ipv6_magic(&ipv6->saddr, &ipv6->daddr, payload_len,
+				IPPROTO_TCP, check);
 	}
 }
 
