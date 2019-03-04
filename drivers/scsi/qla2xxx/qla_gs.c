@@ -3261,6 +3261,9 @@ static void qla24xx_async_gpsc_sp_done(void *s, int res)
 	    "Async done-%s res %x, WWPN %8phC \n",
 	    sp->name, res, fcport->port_name);
 
+	if (res == QLA_FUNCTION_TIMEOUT)
+		return;
+
 	if (res == (DID_ERROR << 16)) {
 		/* entry status error */
 		goto done;
@@ -4154,7 +4157,6 @@ static void qla2x00_async_gpnft_gnnft_sp_done(void *s, int res)
 	if (res) {
 		unsigned long flags;
 
-		sp->free(sp);
 		spin_lock_irqsave(&vha->work_lock, flags);
 		vha->scan.scan_flags &= ~SF_SCANNING;
 		vha->scan.scan_retry++;
@@ -4219,10 +4221,13 @@ static void qla2x00_async_gpnft_gnnft_sp_done(void *s, int res)
 		return;
 	}
 
-	if (cmd == GPN_FT_CMD)
+	if (cmd == GPN_FT_CMD) {
+		del_timer(&sp->u.iocb_cmd.timer);
 		e = qla2x00_alloc_work(vha, QLA_EVT_GPNFT_DONE);
-	else
+	} else {
 		e = qla2x00_alloc_work(vha, QLA_EVT_GNNFT_DONE);
+	}
+
 	if (!e) {
 		/* please ignore kernel warning. Otherwise, we have mem leak. */
 		if (sp->u.iocb_cmd.u.ctarg.req) {
@@ -4351,7 +4356,6 @@ void qla24xx_async_gpnft_done(scsi_qla_host_t *vha, srb_t *sp)
 {
 	ql_dbg(ql_dbg_disc, vha, 0xffff,
 	    "%s enter\n", __func__);
-	del_timer(&sp->u.iocb_cmd.timer);
 	qla24xx_async_gnnft(vha, sp, sp->gen2);
 }
 
