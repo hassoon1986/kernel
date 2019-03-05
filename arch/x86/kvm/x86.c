@@ -1660,6 +1660,7 @@ int kvm_set_msr_common(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 		}
 		break;
 	case MSR_AMD64_NB_CFG:
+	case MSR_F15H_EX_CFG:
 		break;
 	case MSR_IA32_DEBUGCTLMSR:
 		if (!data) {
@@ -1973,6 +1974,7 @@ int kvm_get_msr_common(struct kvm_vcpu *vcpu, u32 msr, u64 *pdata)
 	case MSR_K7_PERFCTR0:
 	case MSR_K8_INT_PENDING_MSG:
 	case MSR_AMD64_NB_CFG:
+	case MSR_F15H_EX_CFG:
 	case MSR_FAM10H_MMIO_CONF_BASE:
 	case 0xe2:
 		data = 0;
