@@ -2480,8 +2480,8 @@ out_freeoutqbufs:
 	}
 out_freeoutq:
 	while (i > 0) {
-		kfree(card->qdio.out_qs[--i]);
-		qeth_clear_outq_buffers(card->qdio.out_qs[i], 1);
+		qeth_clear_outq_buffers(card->qdio.out_qs[--i], 1);
+		kfree(card->qdio.out_qs[i]);
 	}
 	kfree(card->qdio.out_qs);
 	card->qdio.out_qs = NULL;
