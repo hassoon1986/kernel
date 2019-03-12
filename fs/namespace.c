@@ -2268,7 +2268,7 @@ int copy_mount_string(const void __user *data, char **where)
 		return 0;
 	}
 
-	tmp = strndup_user(data, PAGE_SIZE);
+	tmp = strndup_user(data, PATH_MAX);
 	if (IS_ERR(tmp))
 		return PTR_ERR(tmp);
 
