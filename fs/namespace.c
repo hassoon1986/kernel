@@ -2719,7 +2719,7 @@ int copy_mount_options(const void __user * data, unsigned long *where)
 
 char *copy_mount_string(const void __user *data)
 {
-	return data ? strndup_user(data, PAGE_SIZE) : NULL;
+	return data ? strndup_user(data, PATH_MAX) : NULL;
 }
 
 /*
