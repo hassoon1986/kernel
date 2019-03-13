@@ -24,6 +24,7 @@
 #include <linux/sched.h>	/* for idle_task_exit */
 #include <linux/cpu.h>
 #include <linux/of.h>
+#include <linux/slab.h>
 #include <asm/prom.h>
 #include <asm/rtas.h>
 #include <asm/firmware.h>
@@ -33,6 +34,7 @@
 #include <asm/plpar_wrappers.h>
 #include <asm/topology.h>
 
+#include "pseries.h"
 #include "offline_states.h"
 
 /* This version can't take the spinlock, because it never returns */
@@ -341,6 +343,394 @@ static void pseries_remove_processor(struct device_node *np)
 	cpu_maps_update_done();
 }
 
+static int dlpar_online_cpu(struct device_node *dn)
+{
+	int rc = 0;
+	unsigned int cpu;
+	int len, nthreads, i;
+	const __be32 *intserv;
+	u32 thread;
+
+	intserv = of_get_property(dn, "ibm,ppc-interrupt-server#s", &len);
+	if (!intserv)
+		return -EINVAL;
+
+	nthreads = len / sizeof(u32);
+
+	cpu_maps_update_begin();
+	for (i = 0; i < nthreads; i++) {
+		thread = be32_to_cpu(intserv[i]);
+		for_each_present_cpu(cpu) {
+			if (get_hard_smp_processor_id(cpu) != thread)
+				continue;
+			BUG_ON(get_cpu_current_state(cpu)
+					!= CPU_STATE_OFFLINE);
+			cpu_maps_update_done();
+			timed_topology_update(1);
+			find_and_online_cpu_nid(cpu);
+			rc = device_online(get_cpu_device(cpu));
+			if (rc)
+				goto out;
+			cpu_maps_update_begin();
+
+			break;
+		}
+		if (cpu == num_possible_cpus())
+			printk(KERN_WARNING "Could not find cpu to online "
+			       "with physical id 0x%x\n", thread);
+	}
+	cpu_maps_update_done();
+
+out:
+	return rc;
+
+}
+
+static bool dlpar_cpu_exists(struct device_node *parent, u32 drc_index)
+{
+	struct device_node *child = NULL;
+	u32 my_drc_index;
+	bool found;
+	int rc;
+
+	/* Assume cpu doesn't exist */
+	found = false;
+
+	for_each_child_of_node(parent, child) {
+		rc = of_property_read_u32(child, "ibm,my-drc-index",
+					  &my_drc_index);
+		if (rc)
+			continue;
+
+		if (my_drc_index == drc_index) {
+			of_node_put(child);
+			found = true;
+			break;
+		}
+	}
+
+	return found;
+}
+
+static ssize_t dlpar_cpu_add(u32 drc_index)
+{
+	struct device_node *dn, *parent;
+	int rc;
+
+	parent = of_find_node_by_path("/cpus");
+	if (!parent)
+		return -ENODEV;
+
+	if (dlpar_cpu_exists(parent, drc_index)) {
+		of_node_put(parent);
+		printk(KERN_WARNING "CPU with drc index %x already exists\n",
+		       drc_index);
+		return -EINVAL;
+	}
+
+	rc = dlpar_acquire_drc(drc_index);
+	if (rc) {
+		of_node_put(parent);
+		return -EINVAL;
+	}
+
+	dn = dlpar_configure_connector(cpu_to_be32(drc_index), parent);
+	of_node_put(parent);
+	if (!dn)
+		return -EINVAL;
+
+	rc = dlpar_attach_node(dn);
+	if (rc) {
+		dlpar_release_drc(drc_index);
+		dlpar_free_cc_nodes(dn);
+		return rc;
+	}
+
+	rc = dlpar_online_cpu(dn);
+	return rc;
+}
+
+static int dlpar_offline_cpu(struct device_node *dn)
+{
+	int rc = 0;
+	unsigned int cpu;
+	int len, nthreads, i;
+	const __be32 *intserv;
+	u32 thread;
+
+	intserv = of_get_property(dn, "ibm,ppc-interrupt-server#s", &len);
+	if (!intserv)
+		return -EINVAL;
+
+	nthreads = len / sizeof(u32);
+
+	cpu_maps_update_begin();
+	for (i = 0; i < nthreads; i++) {
+		thread = be32_to_cpu(intserv[i]);
+		for_each_present_cpu(cpu) {
+			if (get_hard_smp_processor_id(cpu) != thread)
+				continue;
+
+			if (get_cpu_current_state(cpu) == CPU_STATE_OFFLINE)
+				break;
+
+			if (get_cpu_current_state(cpu) == CPU_STATE_ONLINE) {
+				set_preferred_offline_state(cpu,
+							    CPU_STATE_OFFLINE);
+				cpu_maps_update_done();
+				timed_topology_update(1);
+				rc = device_offline(get_cpu_device(cpu));
+				if (rc)
+					goto out;
+				cpu_maps_update_begin();
+				break;
+
+			}
+
+			/*
+			 * The cpu is in CPU_STATE_INACTIVE.
+			 * Upgrade it's state to CPU_STATE_OFFLINE.
+			 */
+			set_preferred_offline_state(cpu, CPU_STATE_OFFLINE);
+			BUG_ON(plpar_hcall_norets(H_PROD, thread)
+								!= H_SUCCESS);
+			__cpu_die(cpu);
+			break;
+		}
+		if (cpu == num_possible_cpus())
+			printk(KERN_WARNING "Could not find cpu to offline with physical id 0x%x\n", thread);
+	}
+	cpu_maps_update_done();
+
+out:
+	return rc;
+
+}
+
+static ssize_t dlpar_cpu_remove(struct device_node *dn, u32 drc_index)
+{
+	int rc;
+
+	rc = dlpar_offline_cpu(dn);
+	if (rc)
+		return -EINVAL;
+
+	rc = dlpar_release_drc(drc_index);
+	if (rc)
+		return rc;
+
+	rc = dlpar_detach_node(dn);
+	if (rc)
+		dlpar_acquire_drc(drc_index);
+
+	return rc;
+}
+
+static struct device_node *cpu_drc_index_to_dn(u32 drc_index)
+{
+	struct device_node *dn;
+	u32 my_index;
+	int rc;
+
+	for_each_node_by_type(dn, "cpu") {
+		rc = of_property_read_u32(dn, "ibm,my-drc-index", &my_index);
+		if (rc)
+			continue;
+
+		if (my_index == drc_index)
+			break;
+	}
+
+	return dn;
+}
+
+static int dlpar_cpu_remove_by_index(u32 drc_index)
+{
+	struct device_node *dn;
+	int rc;
+
+	dn = cpu_drc_index_to_dn(drc_index);
+	if (!dn) {
+		pr_warn("Cannot find CPU (drc index %x) to remove\n",
+			drc_index);
+		return -ENODEV;
+	}
+
+	rc = dlpar_cpu_remove(dn, drc_index);
+	of_node_put(dn);
+	return rc;
+}
+
+static int find_dlpar_cpus_to_remove(u32 *cpu_drcs, int cpus_to_remove)
+{
+	struct device_node *dn;
+	int cpus_found = 0;
+	int rc;
+
+	/* We want to find cpus_to_remove + 1 CPUs to ensure we do not
+	 * remove the last CPU.
+	 */
+	for_each_node_by_type(dn, "cpu") {
+		cpus_found++;
+
+		if (cpus_found > cpus_to_remove) {
+			of_node_put(dn);
+			break;
+		}
+
+		/* Note that cpus_found is always 1 ahead of the index
+		 * into the cpu_drcs array, so we use cpus_found - 1
+		 */
+		rc = of_property_read_u32(dn, "ibm,my-drc-index",
+					  &cpu_drcs[cpus_found - 1]);
+		if (rc) {
+			pr_warn("Error occurred getting drc-index for %s\n",
+				dn->name);
+			of_node_put(dn);
+			return -1;
+		}
+	}
+
+	if (cpus_found < cpus_to_remove) {
+		pr_warn("Failed to find enough CPUs (%d of %d) to remove\n",
+			cpus_found, cpus_to_remove);
+	} else if (cpus_found == cpus_to_remove) {
+		pr_warn("Cannot remove all CPUs\n");
+	}
+
+	return cpus_found;
+}
+
+static int dlpar_cpu_remove_by_count(u32 cpus_to_remove)
+{
+	u32 *cpu_drcs;
+	int cpus_found;
+	int cpus_removed = 0;
+	int i, rc;
+
+	pr_debug("Attempting to hot-remove %d CPUs\n", cpus_to_remove);
+
+	cpu_drcs = kcalloc(cpus_to_remove, sizeof(*cpu_drcs), GFP_KERNEL);
+	if (!cpu_drcs)
+		return -EINVAL;
+
+	cpus_found = find_dlpar_cpus_to_remove(cpu_drcs, cpus_to_remove);
+	if (cpus_found <= cpus_to_remove) {
+		kfree(cpu_drcs);
+		return -EINVAL;
+	}
+
+	for (i = 0; i < cpus_to_remove; i++) {
+		rc = dlpar_cpu_remove_by_index(cpu_drcs[i]);
+		if (rc)
+			break;
+
+		cpus_removed++;
+	}
+
+	if (cpus_removed != cpus_to_remove) {
+		pr_warn("CPU hot-remove failed, adding back removed CPUs\n");
+
+		for (i = 0; i < cpus_removed; i++)
+			dlpar_cpu_add(cpu_drcs[i]);
+
+		rc = -EINVAL;
+	} else {
+		rc = 0;
+	}
+
+	kfree(cpu_drcs);
+	return rc;
+}
+
+int dlpar_cpu_readd(int cpu)
+{
+	struct device_node *dn;
+	struct device *dev;
+	u32 drc_index;
+	int rc;
+
+	dev = get_cpu_device(cpu);
+	dn = dev->of_node;
+
+	rc = of_property_read_u32(dn, "ibm,my-drc-index", &drc_index);
+
+	rc = dlpar_cpu_remove_by_index(drc_index);
+	if (!rc)
+		rc = dlpar_cpu_add(drc_index);
+
+	return rc;
+}
+
+int dlpar_cpu(struct pseries_hp_errorlog *hp_elog)
+{
+	u32 count, drc_index;
+	int rc;
+
+	count = hp_elog->_drc_u.drc_count;
+	drc_index = hp_elog->_drc_u.drc_index;
+
+	lock_device_hotplug();
+
+	switch (hp_elog->action) {
+	case PSERIES_HP_ELOG_ACTION_REMOVE:
+		if (hp_elog->id_type == PSERIES_HP_ELOG_ID_DRC_COUNT)
+			rc = dlpar_cpu_remove_by_count(count);
+		else if (hp_elog->id_type == PSERIES_HP_ELOG_ID_DRC_INDEX)
+			rc = dlpar_cpu_remove_by_index(drc_index);
+		else
+			rc = -EINVAL;
+		break;
+	default:
+		pr_err("Invalid action (%d) specified\n", hp_elog->action);
+		rc = -EINVAL;
+		break;
+	}
+
+	unlock_device_hotplug();
+	return rc;
+}
+
+#ifdef CONFIG_ARCH_CPU_PROBE_RELEASE
+
+static ssize_t dlpar_cpu_probe(const char *buf, size_t count)
+{
+	u32 drc_index;
+	int rc;
+
+	rc = kstrtou32(buf, 0, &drc_index);
+	if (rc)
+		return -EINVAL;
+
+	rc = dlpar_cpu_add(drc_index);
+
+	return rc ? rc : count;
+}
+
+static ssize_t dlpar_cpu_release(const char *buf, size_t count)
+{
+	struct device_node *dn;
+	u32 drc_index;
+	int rc;
+
+	dn = of_find_node_by_path(buf);
+	if (!dn)
+		return -EINVAL;
+
+	rc = of_property_read_u32(dn, "ibm,my-drc-index", &drc_index);
+	if (rc) {
+		of_node_put(dn);
+		return -EINVAL;
+	}
+
+	rc = dlpar_cpu_remove(dn, drc_index);
+	of_node_put(dn);
+
+	return rc ? rc : count;
+}
+
+#endif /* CONFIG_ARCH_CPU_PROBE_RELEASE */
+
 static int pseries_smp_notifier(struct notifier_block *nb,
 				unsigned long action, void *data)
 {
@@ -386,6 +776,11 @@ static int __init pseries_cpu_hotplug_init(void)
 	const char *typep;
 	int cpu;
 	int qcss_tok;
+
+#ifdef CONFIG_ARCH_CPU_PROBE_RELEASE
+	ppc_md.cpu_probe = dlpar_cpu_probe;
+	ppc_md.cpu_release = dlpar_cpu_release;
+#endif /* CONFIG_ARCH_CPU_PROBE_RELEASE */
 
 	for_each_node_by_name(np, "interrupt-controller") {
 		typep = of_get_property(np, "compatible", NULL);
