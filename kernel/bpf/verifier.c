@@ -2129,7 +2129,7 @@ static int replace_map_fd_with_map_ptr(struct verifier_env *env)
 
 			if (insn[0].src_reg != BPF_PSEUDO_MAP_FD ||
 			    insn[1].imm != 0) {
-				verbose(env, "unrecognized bpf_ld_imm64 insn\n");
+				verbose("unrecognized bpf_ld_imm64 insn\n");
 				return -EINVAL;
 			}
 
