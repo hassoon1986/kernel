@@ -7489,7 +7489,14 @@ static int handle_vmptrld(struct kvm_vcpu *vcpu)
 		struct page *page;
 		page = nested_get_page(vcpu, vmptr);
 		if (page == NULL) {
-			nested_vmx_failInvalid(vcpu);
+			/*
+			 * Reads from an unbacked page return all 1s,
+			 * which means that the 32 bits located at the
+			 * given physical address won't match the required
+			 * VMCS12_REVISION identifier.
+			 */
+			nested_vmx_failValid(vcpu,
+				VMXERR_VMPTRLD_INCORRECT_VMCS_REVISION_ID);
 			skip_emulated_instruction(vcpu);
 			return 1;
 		}
