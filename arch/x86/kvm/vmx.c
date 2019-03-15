@@ -6641,7 +6641,10 @@ static __init int hardware_setup(void)
 
 	kvm_mce_cap_supported |= MCG_LMCE_P;
 
-	return alloc_kvm_area();
+	r = alloc_kvm_area();
+	if (r)
+		goto out3;
+	return 0;
 
 out3:
 	free_page((unsigned long)vmx_vmwrite_bitmap);
@@ -6652,7 +6655,7 @@ out1:
 out:
 	free_page((unsigned long)vmx_io_bitmap_a);
 
-    return r;
+	return r;
 }
 
 static __exit void hardware_unsetup(void)
