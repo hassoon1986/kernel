@@ -243,6 +243,7 @@ __blkdev_direct_IO_simple(struct kiocb *iocb, struct iov_iter *iter,
 	if (file->f_flags & O_NONBLOCK)
 		bio.bi_opf |= REQ_FAILFAST_DEV;
 
+	bio_get(&bio);
 	qc = submit_bio(&bio);
 	for (;;) {
 		set_current_state(TASK_UNINTERRUPTIBLE);
@@ -262,6 +263,7 @@ __blkdev_direct_IO_simple(struct kiocb *iocb, struct iov_iter *iter,
 
 	if (unlikely(bio.bi_error))
 		ret = bio.bi_error;
+	bio_put(&bio);
 
 out:
 	if (vecs != inline_vecs)
