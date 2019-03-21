@@ -84,6 +84,7 @@
 #define X86_FEATURE_IBRS	( 2*32+ 7) /* Indirect Branch Restricted Speculation */
 #define X86_FEATURE_FLUSH_L1D	( 2*32+ 8) /* Flush L1D cache */
 #define X86_FEATURE_L1TF_PTEINV	( 2*32+ 9) /* "" L1TF workaround PTE inversion */
+#define X86_FEATURE_TSX_FORCE_ABORT ( 2*32+10) /* "" TSX_FORCE_ABORT */
 
 /* Other features, Linux-defined mapping, word 3 */
 /* This range is used for feature bits which conflict or are synthesized */
@@ -225,7 +226,6 @@
 #define X86_FEATURE_SPEC_STORE_BYPASS_DISABLE	( 7*32+24) /* "" Disable Speculative Store Bypass. */
 #define X86_FEATURE_LS_CFG_SSBD	( 7*32+25) /* "" AMD SSBD implementation */
 #define X86_FEATURE_IBPB	( 7*32+26) /* Indirect Branch Prediction Barrier */
-#define X86_FEATURE_TSX_FORCE_ABORT ( 7*32+27) /* "" TSX_FORCE_ABORT */
 
 /*
  * bp: that's the generic one, above is the Intel-specific one. We do it all
