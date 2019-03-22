@@ -899,7 +899,7 @@ extern bool kvm_rebooting;
 	"cmpb $0, kvm_rebooting \n\t"	      \
 	"jne 668b \n\t"      		      \
 	__ASM_SIZE(push) " $666b \n\t"	      \
-	"call kvm_spurious_fault \n\t"	      \
+	"jmp kvm_spurious_fault \n\t"	      \
 	".popsection \n\t" \
 	".pushsection __ex_table, \"a\" \n\t" \
 	_ASM_PTR " 666b, 667b \n\t" \
